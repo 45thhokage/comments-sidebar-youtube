@@ -814,6 +814,18 @@
         `;
       }
 
+      // Playlist-specific: stretch playlist to fill the sidebar
+      if (tab === "playlist") {
+        css += `
+          /* Make playlist fill the sidebar vertically */
+          #secondary-inner.ytd-watch-flexy ytd-playlist-panel-renderer,
+          #secondary-inner.ytd-watch-flexy #playlist {
+            height: 100% !important;
+            max-height: 100% !important;
+          }
+        `;
+      }
+
       // Chat-specific: ensure the live chat iframe fills the sidebar
       if (tab === "chat") {
         css += `
