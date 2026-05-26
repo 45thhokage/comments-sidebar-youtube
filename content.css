@@ -20,20 +20,70 @@ body[warc-active] #warc-app {
   display: block;
 }
 
-/* ---- Tab Headings Bar ---- */
-#warc-tab-headings {
+/* ---- Tab Bar Wrapper ---- */
+#warc-tab-bar-wrapper {
   position: fixed;
   top: 56px;
   z-index: 99999;
   display: flex;
   align-items: center;
-  padding: 4px 12px;
-  background: var(--yt-spec-general-background-a, #0f0f0f);
-  border-bottom: 1px solid var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.1));
-  gap: 4px;
   height: 36px;
   box-sizing: border-box;
   pointer-events: auto;
+  background: var(--yt-spec-general-background-a, #0f0f0f);
+  border-bottom: 1px solid var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.1));
+}
+
+/* ---- Scroll Buttons ---- */
+#warc-scroll-left,
+#warc-scroll-right {
+  display: none; /* shown dynamically via JS */
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 100%;
+  min-width: 24px;
+  border: none;
+  background: var(--yt-spec-general-background-a, #0f0f0f);
+  color: var(--yt-spec-text-secondary, #aaa);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  z-index: 1;
+}
+
+#warc-scroll-left:hover,
+#warc-scroll-right:hover {
+  background: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.1));
+  color: var(--yt-spec-text-primary, #fff);
+}
+
+/* ---- Scrollable Tab Container ---- */
+#warc-tab-scroll-container {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+  min-width: 0; /* Allow shrinking */
+}
+
+/* Hide scrollbar on tab scroll container for clean look */
+#warc-tab-scroll-container::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- Tab Headings Bar ---- */
+#warc-tab-headings {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  gap: 4px;
+  height: 36px;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
 #warc-tab-headings button {
@@ -48,6 +98,7 @@ body[warc-active] #warc-app {
   transition: background-color 0.15s ease, color 0.15s ease;
   white-space: nowrap;
   line-height: 1.2;
+  flex-shrink: 0; /* Don't shrink — scroll instead */
 }
 
 #warc-tab-headings button:hover {
