@@ -1,296 +1,269 @@
 /**
- * Comments Sidebar for YouTube - Content Script
- * Rewritten for current YouTube DOM structure
+ * YouTube Side Panel — Content Script (Manifest V3) v2
  *
- * YouTube DOM structure (as of 2025):
+ * SPA-Aware Architecture:
+ *   1. Content script is injected on EVERY YouTube page (not just /watch)
+ *   2. init() runs immediately, pre-creating the sidebar UI (hidden) and
+ *      setting up event listeners
+ *   3. setupNavigationListener() hooks into YouTube's SPA events
+ *      (yt-navigate-finish, yt-page-data-updated)
+ *   4. When you click a video, YouTube's SPA router fires yt-navigate-finish
+ *   5. checkWatchPage() detects the /watch URL and waits for ytd-watch-flexy
+ *      to render
+ *   6. applyLayout() transforms the page into a split layout using dynamic
+ *      CSS + JS DOM manipulation
+ *   7. inject.js (in page context, MAIN world) patches YouTube's internal
+ *      layout logic to prevent conflicts
+ *   8. MutationObserver keeps re-applying the layout as YouTube mutates the DOM
+ *
+ * YouTube DOM structure (2025):
  *   #columns
  *     #primary
  *       #primary-inner
- *         #player → #player-container-outer → ... → #movie_player
+ *         #player → #player-container-outer → #movie_player
  *         #below
- *           div.box → ytd-watch-metadata (title, description, chapters, ask button)
- *           div.box → ytd-comments#comments
+ *           .box → ytd-watch-metadata (title, description)
+ *           .box → ytd-comments#comments
  *     #secondary
  *       #secondary-inner
- *         #panels → ytd-engagement-panel-section-list-renderer (chapters, ask, etc.)
- *         #playlist  (or ytd-playlist-panel-renderer)
- *         #chat  → ytd-live-chat-frame (live streams)
  *         #related
- *
- * Tab categories:
- *   - Below tabs (description, comments): show #below fixed in sidebar
- *   - Secondary tabs (related, playlist, chat): show #secondary-inner fixed in sidebar
- *   - Panel tabs (chapters, ask): show #panels fixed in sidebar with specific panel visible
+ *         #playlist / ytd-playlist-panel-renderer
+ *         #chat / ytd-live-chat-frame
+ *         #panels (chapters/ask engagement panels)
  */
-
 (function () {
   "use strict";
 
-  // ---- State ----
-  let extensionEnabled = true;
+  // ── Constants ────────────────────────────────────────────────
+  const HEADER_HEIGHT = 56;
+  const DIVIDER_WIDTH = 8;   // width of the resize bar hit target
+  const TAB_BAR_HEIGHT = 38;
+  const SIDEBAR_PADDING = 8;
+  const STORAGE_KEY = "ytSidePanelPlayerWidthPercent";
+  const TABS = ["description", "comments", "chapters", "ask", "related", "playlist", "chat"];
+  const BELOW_TABS = new Set(["description", "comments"]);
+
+  // ── State ────────────────────────────────────────────────────
   let isOnWatchPage = false;
-  let isFullscreen = false;
-  let activeTab = "comments";
-  let playerWidthPercent = 0.5;
+  let activeTab = "description";
+  let playerWidth = 0;
+  let playerWidthPercent = 0.55;
   let isDragging = false;
   let dragStartX = 0;
   let dragStartWidth = 0;
-  let playerWidth = 0;
+  let isFullscreen = false;
+  let isUIReady = false;
 
-  const scrollPositions = {
-    description: 0,
-    comments: 0,
-    chapters: 0,
-    related: 0,
-    playlist: 0,
-    chat: 0,
-    ask: 0,
-  };
-
-  // ---- Constants ----
-  const HEADER_HEIGHT = 56;
-  const DIVIDER_WIDTH = 6;
-  const TAB_BAR_HEIGHT = 36;
-  const SIDEBAR_PADDING = 8;
-
-  // ---- DOM refs ----
-  let warcApp = null;
-  let tabHeadings = null;
-  let tabScrollContainer = null;
-  let scrollLeftBtn = null;
-  let scrollRightBtn = null;
-  let resizeBar = null;
+  // ── DOM refs (created once, persisted across navigations) ────
+  let appEl = null;
+  let tabBarEl = null;
+  let resizeBarEl = null;
   let styleEl = null;
-  let observer = null;
-  let nativeButtonObserver = null;
+  let tabBtns = {};
+  let engagementPanelObserver = null;
+  let domObserver = null;
 
-  // ---- Init ----
-  init();
-
+  // ── Step 2: init() runs immediately ──────────────────────────
+  // Pre-creates sidebar UI (hidden) and sets up all listeners.
+  // This runs on EVERY YouTube page, not just /watch.
   function init() {
-    loadExtensionState().then(() => {
-      createUI();
-      injectMainScript();
-      setupNavigationListener();
-      setupMessageListener();
-      setupFullscreenListener();
-      setupWindowResize();
+    loadStoredWidth().then(() => {
+      createUI();                       // Pre-create sidebar UI (hidden)
+      setupNavigationListener();        // Step 3: Hook SPA events
       setupNativeButtonInterceptors();
       setupEngagementPanelObserver();
+      setupFullscreenListener();
+      listenForWindowResize();
+      isUIReady = true;
+
+      // Step 5: Check if we're ALREADY on a watch page (direct load)
       checkWatchPage();
     });
   }
 
-  // ---- Storage ----
-  function getStorageData(key) {
+  // Run init immediately
+  init();
+
+  // ── Persistence ──────────────────────────────────────────────
+  function loadStoredWidth() {
     return new Promise((resolve) => {
-      chrome.storage.local.get(key, (items) => {
-        if (chrome.runtime.lastError) {
-          resolve(undefined);
-        } else {
-          resolve(items[key]);
-        }
-      });
+      try {
+        const stored = sessionStorage.getItem(STORAGE_KEY);
+        if (stored) playerWidthPercent = parseFloat(stored);
+      } catch (_) {}
+      resolve();
     });
   }
 
-  async function loadExtensionState() {
-    extensionEnabled = (await getStorageData("extensionEnabled")) ?? true;
-    playerWidthPercent = (await getStorageData("playerWidthPercent")) ?? 0.5;
-  }
-
-  function savePlayerWidth() {
+  function saveWidth() {
     const vw = document.documentElement.clientWidth;
     if (vw > 0) {
       playerWidthPercent = playerWidth / vw;
-      chrome.storage.local.set({ playerWidthPercent: playerWidthPercent });
+      try { sessionStorage.setItem(STORAGE_KEY, String(playerWidthPercent)); } catch (_) {}
     }
   }
 
-  // ---- UI Creation ----
+  // ── Step 2: Create UI elements (hidden by default) ───────────
+  // The #ytsp-app starts with display:none via content.css.
+  // It only becomes visible when body[ytsp-active] is set.
   function createUI() {
-    warcApp = document.createElement("div");
-    warcApp.id = "warc-app";
+    if (appEl) return; // Already created — persist across navigations
 
-    // Tab bar wrapper: includes scroll buttons + tab container
-    const tabBarWrapper = document.createElement("div");
-    tabBarWrapper.id = "warc-tab-bar-wrapper";
+    // Root container — zero-size, pointer-events:none so it doesn't block YT
+    appEl = document.createElement("div");
+    appEl.id = "ytsp-app";
 
-    // Left scroll button
-    scrollLeftBtn = document.createElement("button");
-    scrollLeftBtn.id = "warc-scroll-left";
-    scrollLeftBtn.innerHTML = "&#9664;"; // ◀
-    scrollLeftBtn.title = "Scroll tabs left";
-    scrollLeftBtn.addEventListener("click", () => scrollTabBar(-1));
-    scrollLeftBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    // Tab bar
+    tabBarEl = document.createElement("div");
+    tabBarEl.id = "ytsp-tab-bar";
 
-    // Scrollable tab container
-    tabScrollContainer = document.createElement("div");
-    tabScrollContainer.id = "warc-tab-scroll-container";
-
-    tabHeadings = document.createElement("div");
-    tabHeadings.id = "warc-tab-headings";
-
-    const tabs = ["description", "comments", "chapters", "ask", "related", "playlist", "chat"];
-    tabs.forEach((tab) => {
+    TABS.forEach((tab) => {
       const btn = document.createElement("button");
       btn.textContent = tab;
       btn.dataset.tab = tab;
       if (tab === activeTab) btn.classList.add("active");
       btn.addEventListener("click", () => switchTab(tab));
-      tabHeadings.appendChild(btn);
+      tabBarEl.appendChild(btn);
+      tabBtns[tab] = btn;
     });
 
-    tabScrollContainer.appendChild(tabHeadings);
-
-    // Right scroll button
-    scrollRightBtn = document.createElement("button");
-    scrollRightBtn.id = "warc-scroll-right";
-    scrollRightBtn.innerHTML = "&#9654;"; // ▶
-    scrollRightBtn.title = "Scroll tabs right";
-    scrollRightBtn.addEventListener("click", () => scrollTabBar(1));
-    scrollRightBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
-
-    tabBarWrapper.appendChild(scrollLeftBtn);
-    tabBarWrapper.appendChild(tabScrollContainer);
-    tabBarWrapper.appendChild(scrollRightBtn);
-
-    resizeBar = document.createElement("div");
-    resizeBar.id = "warc-resize-bar";
+    // Resize bar
+    resizeBarEl = document.createElement("div");
+    resizeBarEl.id = "ytsp-resize-bar";
     const resizeInner = document.createElement("div");
-    resizeBar.appendChild(resizeInner);
+    resizeBarEl.appendChild(resizeInner);
 
-    resizeBar.addEventListener("pointerdown", onResizeStart);
-    resizeBar.addEventListener("pointermove", onResizeMove);
-    resizeBar.addEventListener("pointerup", onResizeEnd);
-    resizeBar.addEventListener("lostpointercapture", onResizeEnd);
+    resizeBarEl.addEventListener("pointerdown", onResizeStart);
+    resizeBarEl.addEventListener("pointermove", onResizeMove);
+    resizeBarEl.addEventListener("pointerup", onResizeEnd);
+    resizeBarEl.addEventListener("lostpointercapture", onResizeEnd);
 
-    warcApp.appendChild(tabBarWrapper);
-    warcApp.appendChild(resizeBar);
-    document.body.appendChild(warcApp);
-
+    // Dynamic style tag
     styleEl = document.createElement("style");
-    styleEl.id = "warc-dynamic-styles";
+    styleEl.id = "ytsp-dynamic-styles";
+
+    appEl.appendChild(tabBarEl);
+    appEl.appendChild(resizeBarEl);
     document.head.appendChild(styleEl);
-
-    // Update scroll button visibility
-    updateScrollButtons();
-    tabScrollContainer.addEventListener("scroll", updateScrollButtons);
+    document.body.appendChild(appEl);
   }
 
-  /**
-   * Scroll the tab bar by one tab width in the given direction.
-   * direction: -1 for left, +1 for right
-   */
-  function scrollTabBar(direction) {
-    if (!tabScrollContainer) return;
-    const scrollAmount = 120;
-    tabScrollContainer.scrollBy({ left: direction * scrollAmount, behavior: "smooth" });
-  }
-
-  /**
-   * Show/hide scroll arrows based on scroll position and overflow.
-   */
-  function updateScrollButtons() {
-    if (!tabScrollContainer || !scrollLeftBtn || !scrollRightBtn) return;
-    const el = tabScrollContainer;
-    const canScrollLeft = el.scrollLeft > 2;
-    const canScrollRight = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
-    scrollLeftBtn.style.display = canScrollLeft ? "flex" : "none";
-    scrollRightBtn.style.display = canScrollRight ? "flex" : "none";
-  }
-
-  // ---- Tab Switching ----
-  function switchTab(tab) {
-    scrollPositions[activeTab] = window.scrollY;
-    activeTab = tab;
-
-    tabHeadings.querySelectorAll("button").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.tab === tab);
+  // ── Step 3: setupNavigationListener() ────────────────────────
+  // Hooks into YouTube's SPA events to detect navigation.
+  // YouTube's SPA router fires custom events when the user navigates
+  // between pages without a full page reload.
+  function setupNavigationListener() {
+    // yt-navigate-finish: Fired after YouTube's SPA router has finished
+    // navigating to a new page. This is the primary event for detecting
+    // when the user clicks on a video from the home page or search results.
+    document.addEventListener("yt-navigate-finish", () => {
+      console.log("[YTSP] yt-navigate-finish fired, URL:", location.pathname);
+      // Small delay to let YouTube's DOM updates settle before we check
+      setTimeout(checkWatchPage, 300);
     });
 
-    // Scroll the active tab into view in the tab bar
-    const activeBtn = tabHeadings.querySelector('button[data-tab="' + tab + '"]');
+    // yt-page-data-updated: Fired when YouTube updates page data
+    // (e.g., when navigating between videos on the watch page itself,
+    // or when the page metadata is refreshed). This catches some
+    // navigations that yt-navigate-finish misses.
+    document.addEventListener("yt-page-data-updated", () => {
+      console.log("[YTSP] yt-page-data-updated fired, URL:", location.pathname);
+      setTimeout(checkWatchPage, 300);
+    });
+
+    // Fallback: Also monitor history API changes for edge cases where
+    // YouTube's custom events don't fire (e.g., back/forward button,
+    // or certain types of client-side navigation).
+    let lastUrl = location.href;
+    const origPush = history.pushState.bind(history);
+    history.pushState = function (...args) {
+      origPush(...args);
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        console.log("[YTSP] pushState detected, URL:", location.pathname);
+        setTimeout(checkWatchPage, 300);
+      }
+    };
+    window.addEventListener("popstate", () => {
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        console.log("[YTSP] popstate detected, URL:", location.pathname);
+        setTimeout(checkWatchPage, 300);
+      }
+    });
+  }
+
+  // ── Step 5: checkWatchPage() ─────────────────────────────────
+  // Detects the /watch URL and waits for ytd-watch-flexy to render.
+  // This is the gate that activates/deactivates the sidebar layout.
+  function checkWatchPage() {
+    const onWatch = location.pathname === "/watch" ||
+                    location.pathname.startsWith("/watch");
+
+    if (onWatch && !isOnWatchPage) {
+      // Transitioning TO a watch page
+      console.log("[YTSP] Entering watch page, waiting for ytd-watch-flexy...");
+      isOnWatchPage = true;
+
+      // Wait for ytd-watch-flexy to render before applying layout.
+      // YouTube's SPA doesn't insert this element immediately — it may
+      // take a few hundred milliseconds after the navigation event.
+      waitForElement(() => document.querySelector("ytd-watch-flexy"), 10000)
+        .then((flexyEl) => {
+          if (!flexyEl || !isOnWatchPage) return;
+
+          console.log("[YTSP] ytd-watch-flexy found, waiting for #below...");
+
+          // Also wait for #below to exist — it's where description/comments live
+          return waitForElement(() => document.querySelector("#below.ytd-watch-flexy, #below"), 8000);
+        })
+        .then((belowEl) => {
+          if (!belowEl || !isOnWatchPage) return;
+
+          console.log("[YTSP] Watch page DOM ready, applying layout");
+          applyLayout();
+          startDomObserver();
+
+          // Auto-expand description on every fresh page load
+          if (activeTab === "description") setTimeout(autoExpandDescription, 600);
+        });
+
+    } else if (!onWatch && isOnWatchPage) {
+      // Transitioning AWAY from watch page
+      console.log("[YTSP] Leaving watch page, removing layout");
+      isOnWatchPage = false;
+      removeLayout();
+      stopDomObserver();
+    }
+  }
+
+  // ── Tab switching ─────────────────────────────────────────────
+  function switchTab(tab) {
+    if (tab === activeTab) return;
+    tabBtns[activeTab]?.classList.remove("active");
+    activeTab = tab;
+    tabBtns[tab]?.classList.add("active");
+
+    // Scroll the active tab button into view in the tab bar
+    const activeBtn = tabBtns[tab];
     if (activeBtn) {
       activeBtn.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
     }
 
-    // For ask tab, auto-activate the engagement panel if it's not open yet
+    // Auto-activate engagement panels when switching to ask or chapters tabs
     if (tab === "ask") {
       tryActivateAskPanel();
     }
-
-    // For chapters tab, auto-activate the chapters engagement panel if available
     if (tab === "chapters") {
       tryActivateChaptersPanel();
     }
 
-    // For description tab, auto-expand the description
-    if (tab === "description") {
-      setTimeout(autoExpandDescription, 200);
-    }
-
     applyLayout();
-    restoreScroll(tab);
+    if (tab === "description") setTimeout(autoExpandDescription, 250);
   }
 
-  function restoreScroll(tab) {
-    requestAnimationFrame(() => {
-      window.scrollTo(0, scrollPositions[tab] || 0);
-    });
-  }
-
-  /**
-   * Auto-expand the description by clicking the "Show more" button.
-   */
-  function autoExpandDescription() {
-    const below = document.querySelector("#below.ytd-watch-flexy");
-    if (!below) return;
-
-    // Try multiple selectors for YouTube's "Show more" / expand button
-    const expandSelectors = [
-      "#description-inner #expand",
-      "ytd-text-inline-expander #expand",
-      "ytd-expander #expand",
-      "tp-yt-paper-button#more",
-      "#description ytd-expander #expand",
-      "ytd-video-secondary-info-renderer #expand",
-      "ytd-expand-button-renderer button",
-    ];
-
-    for (const sel of expandSelectors) {
-      const btn = below.querySelector(sel);
-      if (btn) {
-        // Check if it's actually collapsed (expand button visible, not collapse)
-        const isCollapsed = btn.offsetParent !== null;
-        if (isCollapsed) {
-          console.log("[WARC] Auto-expanding description via:", sel);
-          btn.click();
-        }
-        return;
-      }
-    }
-
-    // Fallback: look for any button with "more" or "show more" text
-    const allButtons = below.querySelectorAll("button, tp-yt-paper-button");
-    for (const btn of allButtons) {
-      const text = (btn.textContent || "").trim().toLowerCase();
-      const ariaLabel = (btn.getAttribute("aria-label") || "").toLowerCase();
-      if ((text.includes("more") || ariaLabel.includes("more")) &&
-          (text.includes("show") || ariaLabel.includes("show") || text === "more" || ariaLabel.includes("expand"))) {
-        console.log("[WARC] Auto-expanding description via text match");
-        btn.click();
-        return;
-      }
-    }
-  }
-
-  /**
-   * Try to programmatically open YouTube's "Ask" engagement panel
-   * by clicking the Ask button in the action bar.
-   */
+  // ── Try to open YouTube's Ask engagement panel ────────────────
   function tryActivateAskPanel() {
-    // Check if an ask panel already exists and is visible
     const panelsContainer = getPanelsContainer();
     if (panelsContainer) {
       const panelChildren = Array.from(panelsContainer.children);
@@ -299,20 +272,15 @@
       }
     }
 
-    // Look for the Ask button anywhere on the page
     const askBtn = findAskButton();
     if (askBtn) {
-      console.log("[WARC] Clicking Ask button to activate panel");
+      console.log("[YTSP] Clicking Ask button to activate panel");
       askBtn.click();
     }
   }
 
-  /**
-   * Try to programmatically open YouTube's chapters engagement panel
-   * by clicking the chapter title in the video player.
-   */
+  // ── Try to open YouTube's chapters engagement panel ───────────
   function tryActivateChaptersPanel() {
-    // Check if a chapters panel already exists and is visible
     const panelsContainer = getPanelsContainer();
     if (panelsContainer) {
       const panelChildren = Array.from(panelsContainer.children);
@@ -321,20 +289,16 @@
       }
     }
 
-    // Try clicking the chapter title in the player controls
     const chapterBtn = document.querySelector(".ytp-chapter-title.ytp-button");
     if (chapterBtn) {
-      console.log("[WARC] Clicking chapter title in player to activate panel");
+      console.log("[YTSP] Clicking chapter title in player to activate panel");
       chapterBtn.click();
       return;
     }
   }
 
-  /**
-   * Find YouTube's native Ask button on the page.
-   */
+  // ── Find YouTube's native Ask button ─────────────────────────
   function findAskButton() {
-    // Try the most specific selectors first
     const askSelectors = [
       'button[aria-label="Ask"]',
       'button[aria-label*="Ask"]',
@@ -350,7 +314,6 @@
       if (btn) return btn;
     }
 
-    // Fallback: look for any button containing "Ask" text in the action bar area
     const menuRenderer = document.querySelector("ytd-menu-renderer");
     if (menuRenderer) {
       const allButtons = menuRenderer.querySelectorAll("button");
@@ -363,7 +326,6 @@
       }
     }
 
-    // Last resort: search all buttons on page
     const allButtons = document.querySelectorAll("button");
     for (const btn of allButtons) {
       const text = (btn.textContent || "").trim().toLowerCase();
@@ -376,8 +338,7 @@
     return null;
   }
 
-  // ---- Panels Container & Panel Detection (from v2 approach) ----
-
+  // ── Panels Container & Panel Detection ───────────────────────
   function getPanelsContainer() {
     return document.querySelector("#panels.ytd-watch-flexy") ||
            document.querySelector("ytd-engagement-panel-section-list-renderer#panels");
@@ -387,13 +348,17 @@
     const text = (
       el?.getAttribute("target-id") ||
       el?.getAttribute("panel-target-id") ||
+      el?.getAttribute("panel-identifier") ||
       el?.id ||
       ""
     ).toLowerCase();
+    const type = (el?.getAttribute("panel-type") || "").toLowerCase();
 
     return text.includes("chapter") ||
            text.includes("macro-markers") ||
-           text.includes("key moments");
+           text.includes("key moments") ||
+           type.includes("chapter") ||
+           !!el?.querySelector("ytd-macro-markers-list-renderer");
   }
 
   function isAskPanel(el) {
@@ -401,6 +366,7 @@
       el?.getAttribute("target-id") ||
       el?.getAttribute("panel-target-id") ||
       el?.getAttribute("identifier") ||
+      el?.getAttribute("panel-identifier") ||
       el?.id ||
       ""
     ).toLowerCase();
@@ -412,52 +378,35 @@
       text.includes("qna") ||
       text.includes("summary") ||
       text.includes("summarize") ||
-      text.includes("payouchat")
+      text.includes("payouchat") ||
+      !!el?.querySelector("ytd-conversation-section-renderer, ytd-ask-promo-renderer")
     );
-    // Note: intentionally NOT including "chat" here to avoid matching live chat
   }
 
-  // ---- Native Button Interceptors ----
-  /**
-   * Set up click interception on YouTube's native buttons.
-   * When the user clicks YouTube's "Chapters" or "Ask" button,
-   * we switch to the corresponding extension tab.
-   */
+  // ── Native Button Interceptors ───────────────────────────────
   function setupNativeButtonInterceptors() {
-    // Use event delegation on the document body so we catch dynamically added buttons
-    document.addEventListener("click", onNativeButtonClick, true); // capture phase
+    document.addEventListener("click", onNativeButtonClick, true);
   }
 
-  /**
-   * Handle clicks on YouTube's native buttons.
-   */
   function onNativeButtonClick(e) {
-    if (!isOnWatchPage || !extensionEnabled) return;
+    if (!isOnWatchPage) return;
+    if (e.target.closest("#ytsp-app")) return;
 
     const target = e.target;
 
-    // Check if the click is on the Ask button
     if (isAskButtonClick(target)) {
-      console.log("[WARC] Native Ask button clicked, switching to ask tab");
-      setTimeout(() => {
-        switchTab("ask");
-      }, 100);
+      console.log("[YTSP] Native Ask button clicked, switching to ask tab");
+      setTimeout(() => { switchTab("ask"); }, 150);
       return;
     }
 
-    // Check if the click is on the Chapters button
     if (isChaptersButtonClick(target)) {
-      console.log("[WARC] Native Chapters button clicked, switching to chapters tab");
-      setTimeout(() => {
-        switchTab("chapters");
-      }, 100);
+      console.log("[YTSP] Native Chapters button clicked, switching to chapters tab");
+      setTimeout(() => { switchTab("chapters"); }, 150);
       return;
     }
   }
 
-  /**
-   * Check if a click target is the YouTube Ask button.
-   */
   function isAskButtonClick(target) {
     let el = target;
     while (el && el !== document.body) {
@@ -473,24 +422,16 @@
     return false;
   }
 
-  /**
-   * Check if a click target is the YouTube Chapters button.
-   */
   function isChaptersButtonClick(target) {
     let el = target;
     while (el && el !== document.body) {
-      // 1. Chapter title button in the video player controls
       if (el.classList && el.classList.contains("ytp-chapter-title") && el.classList.contains("ytp-button")) {
         return true;
       }
-
-      // 2. Check for chapter-related elements in the description area
       if (el.tagName === "YTD-MACRO-MARKERS-LIST-ITEM-RENDERER" ||
           el.tagName === "YTD-HORIZONTAL-CARD-LIST-RENDERER") {
         return true;
       }
-
-      // 3. "View all chapters" type buttons/links
       if (el.tagName === "BUTTON" || el.tagName === "A") {
         const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
         const text = (el.textContent || "").trim().toLowerCase();
@@ -498,20 +439,15 @@
           return true;
         }
       }
-
       el = el.parentElement;
     }
     return false;
   }
 
-  // ---- Engagement Panel Observer ----
-  /**
-   * Observe engagement panel visibility changes. When YouTube opens
-   * a chapters or ask panel natively, we detect it and switch tabs.
-   */
+  // ── Engagement Panel Observer ────────────────────────────────
   function setupEngagementPanelObserver() {
-    nativeButtonObserver = new MutationObserver((mutations) => {
-      if (!isOnWatchPage || !extensionEnabled) return;
+    engagementPanelObserver = new MutationObserver((mutations) => {
+      if (!isOnWatchPage) return;
 
       for (const mutation of mutations) {
         if (mutation.type === "attributes" && mutation.attributeName === "visibility") {
@@ -520,15 +456,11 @@
             const visibility = panel.getAttribute("visibility");
             if (visibility === "ENGAGEMENT_PANEL_VISIBILITY_EXPANDED") {
               if (isAskPanel(panel)) {
-                console.log("[WARC] Ask engagement panel opened natively, switching to ask tab");
-                if (activeTab !== "ask") {
-                  switchTab("ask");
-                }
+                console.log("[YTSP] Ask engagement panel opened natively, switching to ask tab");
+                if (activeTab !== "ask") switchTab("ask");
               } else if (isChapterPanel(panel)) {
-                console.log("[WARC] Chapters engagement panel opened natively, switching to chapters tab");
-                if (activeTab !== "chapters") {
-                  switchTab("chapters");
-                }
+                console.log("[YTSP] Chapters engagement panel opened natively, switching to chapters tab");
+                if (activeTab !== "chapters") switchTab("chapters");
               }
             }
           }
@@ -536,142 +468,156 @@
       }
     });
 
-    // Observe the whole body for attribute changes on engagement panels
-    nativeButtonObserver.observe(document.body, {
+    engagementPanelObserver.observe(document.body, {
       attributes: true,
       subtree: true,
       attributeFilter: ["visibility"],
     });
   }
 
-  // ---- Layout Engine ----
+  // ── Auto-expand the description ──────────────────────────────
+  function autoExpandDescription() {
+    const below = document.querySelector("#below.ytd-watch-flexy, #below");
+    if (!below) return;
+
+    const selectors = [
+      "#description-inner #expand",
+      "ytd-text-inline-expander #expand",
+      "ytd-expander #expand",
+      "tp-yt-paper-button#more",
+      "#description ytd-expander #expand",
+      "ytd-video-secondary-info-renderer #expand",
+      "ytd-expand-button-renderer button",
+      "ytd-text-inline-expander tp-yt-paper-button[class*='more']",
+    ];
+
+    for (const sel of selectors) {
+      const btn = below.querySelector(sel);
+      if (btn && btn.offsetParent !== null) {
+        btn.click();
+        return;
+      }
+    }
+
+    for (const btn of below.querySelectorAll("button, tp-yt-paper-button")) {
+      const text = (btn.textContent || "").trim().toLowerCase();
+      const label = (btn.getAttribute("aria-label") || "").toLowerCase();
+      if ((text === "more" || label.includes("show more") || label.includes("expand"))
+          && btn.offsetParent !== null) {
+        btn.click();
+        return;
+      }
+    }
+  }
+
+  // ── Step 6: Layout engine ────────────────────────────────────
   function calculatePlayerWidth() {
     const vw = document.documentElement.clientWidth;
     playerWidth = Math.round(vw * playerWidthPercent);
-    playerWidth = Math.max(300, Math.min(playerWidth, Math.round(vw * 0.85)));
+    playerWidth = Math.max(320, Math.min(playerWidth, Math.round(vw * 0.85)));
   }
 
   function applyLayout() {
-    if (!isOnWatchPage || !extensionEnabled || isFullscreen) {
-      removeLayout();
-      return;
-    }
-
-    if (!isDragging) {
-      calculatePlayerWidth();
-    }
+    if (!isOnWatchPage || isFullscreen) { removeLayout(); return; }
+    if (!isDragging) calculatePlayerWidth();
 
     const vw = document.documentElement.clientWidth;
     const sidebarLeft = playerWidth + DIVIDER_WIDTH;
     const sidebarWidth = vw - sidebarLeft - SIDEBAR_PADDING;
+    const sidebarTop = HEADER_HEIGHT + TAB_BAR_HEIGHT;
 
-    document.body.setAttribute("warc-active", "");
+    document.body.setAttribute("ytsp-active", "");
 
-    // Position tab bar wrapper in the sidebar area
-    const tabBarWrapper = document.getElementById("warc-tab-bar-wrapper");
-    if (tabBarWrapper) {
-      tabBarWrapper.style.left = sidebarLeft + "px";
-      tabBarWrapper.style.width = sidebarWidth + SIDEBAR_PADDING + "px";
-    }
+    // Position the tab bar and resize bar
+    tabBarEl.style.left = sidebarLeft + "px";
+    tabBarEl.style.width = sidebarWidth + SIDEBAR_PADDING + "px";
+    resizeBarEl.style.left = playerWidth + "px";
 
-    // Position resize bar at the edge of the player
-    resizeBar.style.left = playerWidth + "px";
+    styleEl.textContent = buildCSS(playerWidth, sidebarLeft, sidebarWidth, sidebarTop);
 
-    // ---- Build CSS ----
-    let css = "";
+    applyTabVisibility(activeTab);
+  }
 
-    // 1. Player: fixed on the left
-    css += `
-      /* ===== FIXED PLAYER ===== */
+  function buildCSS(pw, sidebarLeft, sidebarWidth, sidebarTop) {
+    const h = HEADER_HEIGHT;
+    const viewH = `calc(100vh - ${h}px)`;
+
+    let css = `
+      /* ═══ PLAYER: fixed left column ════════════════════════════ */
       #player.ytd-watch-flexy {
         position: fixed !important;
         left: 0 !important;
-        top: ${HEADER_HEIGHT}px !important;
-        width: ${playerWidth}px !important;
-        height: calc(100vh - ${HEADER_HEIGHT}px) !important;
+        top: ${h}px !important;
+        width: ${pw}px !important;
+        height: ${viewH} !important;
         z-index: 100 !important;
       }
-
       #player-container-outer.ytd-watch-flexy {
-        width: ${playerWidth}px !important;
-        height: calc(100vh - ${HEADER_HEIGHT}px) !important;
+        width: ${pw}px !important;
+        height: ${viewH} !important;
         max-width: none !important;
         min-width: 0 !important;
       }
-
       #player-container-inner {
         padding-bottom: 0 !important;
-        width: ${playerWidth}px !important;
-        height: calc(100vh - ${HEADER_HEIGHT}px) !important;
+        width: ${pw}px !important;
+        height: ${viewH} !important;
       }
-
       #player-container {
-        width: ${playerWidth}px !important;
-        height: calc(100vh - ${HEADER_HEIGHT}px) !important;
+        width: ${pw}px !important;
+        height: ${viewH} !important;
       }
-
       #movie_player {
-        width: ${playerWidth}px !important;
-        height: calc(100vh - ${HEADER_HEIGHT}px) !important;
+        width: ${pw}px !important;
+        height: ${viewH} !important;
       }
-
       .html5-video-container {
-        width: ${playerWidth}px !important;
-        height: calc(100vh - ${HEADER_HEIGHT}px) !important;
+        width: ${pw}px !important;
+        height: ${viewH} !important;
       }
-
       .html5-video-container video {
-        width: ${playerWidth}px !important;
-        height: calc(100vh - ${HEADER_HEIGHT}px) !important;
+        width: ${pw}px !important;
+        height: ${viewH} !important;
         object-fit: contain !important;
         left: 0 !important;
         top: 0 !important;
       }
-
-      /* Theater mode: same fixed positioning */
+      /* Theater mode */
       ytd-watch-flexy[theater] #player-theater-container {
         position: fixed !important;
         left: 0 !important;
-        top: ${HEADER_HEIGHT}px !important;
-        width: ${playerWidth}px !important;
-        height: calc(100vh - ${HEADER_HEIGHT}px) !important;
+        top: ${h}px !important;
+        width: ${pw}px !important;
+        height: ${viewH} !important;
         max-width: none !important;
         margin: 0 !important;
         z-index: 100 !important;
       }
-    `;
 
-    // 2. Columns: block layout
-    css += `
-      /* ===== COLUMNS: BLOCK LAYOUT ===== */
+      /* ═══ COLUMNS layout: block so primary/secondary stack ═════ */
       #columns.ytd-watch-flexy {
         display: block !important;
         margin: 0 !important;
         padding: 0 !important;
         max-width: none !important;
       }
-
       #primary.ytd-watch-flexy {
         max-width: none !important;
         margin: 0 !important;
         padding: 0 !important;
         min-width: 0 !important;
       }
-
       #primary-inner.ytd-watch-flexy {
         margin: 0 !important;
         padding: 0 !important;
         margin-left: ${sidebarLeft}px !important;
-        margin-top: 0 !important;
       }
-
       #secondary.ytd-watch-flexy {
         max-width: none !important;
         margin: 0 !important;
         padding: 0 !important;
         min-width: 0 !important;
       }
-
       #secondary-inner.ytd-watch-flexy {
         margin-left: ${sidebarLeft}px !important;
         padding: 0 ${SIDEBAR_PADDING}px !important;
@@ -679,31 +625,11 @@
       }
     `;
 
-    // 3. Tab-specific visibility
-    css += getTabCSS(activeTab, sidebarLeft, sidebarWidth);
-
-    styleEl.textContent = css;
-
-    // 4. JS-based show/hide for children
-    applyBelowVisibility(activeTab);
-
-    // 5. Update scroll buttons
-    setTimeout(updateScrollButtons, 50);
-
-    // Notify injected script
-    dispatchPlayerSizeUpdate();
-  }
-
-  function getTabCSS(tab, sidebarLeft, sidebarWidth) {
-    let css = "";
-    const sidebarTop = HEADER_HEIGHT + TAB_BAR_HEIGHT;
-
-    const isBelowTab = tab === "description" || tab === "comments";
-    const isSecondaryTab = tab === "related" || tab === "playlist" || tab === "chat" || tab === "chapters" || tab === "ask";
+    const isBelowTab = BELOW_TABS.has(activeTab);
 
     if (isBelowTab) {
       css += `
-        /* ===== ${tab.toUpperCase()} TAB: Show #below in sidebar ===== */
+        /* ═══ BELOW TABS (description / comments) ══════════════════ */
         #below.ytd-watch-flexy {
           position: fixed !important;
           left: ${sidebarLeft}px !important;
@@ -714,35 +640,26 @@
           z-index: 50 !important;
           background: var(--yt-spec-general-background-a, #0f0f0f) !important;
           padding: 0 ${SIDEBAR_PADDING}px !important;
+          box-sizing: border-box !important;
         }
-
         #secondary-inner.ytd-watch-flexy {
           display: none !important;
         }
       `;
-
-      if (tab === "description") {
+      if (activeTab === "description") {
         css += `
-          /* Expand description */
-          ytd-text-inline-expander {
-            --ytd-expander-collapsed-height: none !important;
-          }
-          #description-inner {
-            max-height: none !important;
-            overflow: visible !important;
-          }
-          ytd-expander.ytd-video-secondary-info-renderer {
-            --ytd-expander-collapsed-height: none !important;
-          }
+          /* Auto-expand description text */
+          ytd-text-inline-expander { --ytd-expander-collapsed-height: none !important; }
+          #description-inner { max-height: none !important; overflow: visible !important; }
+          ytd-expander.ytd-video-secondary-info-renderer { --ytd-expander-collapsed-height: none !important; }
         `;
       }
-    } else if (isSecondaryTab) {
+    } else {
       css += `
-        /* ===== ${tab.toUpperCase()} TAB: Show #secondary-inner in sidebar ===== */
+        /* ═══ SECONDARY TABS ════════════════════════════════════════ */
         #below.ytd-watch-flexy {
           display: none !important;
         }
-
         #secondary-inner.ytd-watch-flexy {
           display: block !important;
           position: fixed !important;
@@ -759,11 +676,9 @@
         }
       `;
 
-      // For chapters and ask tabs: position the #panels container on top
-      // of #secondary-inner so engagement panels show in the sidebar
-      if (tab === "chapters" || tab === "ask") {
+      if (activeTab === "chapters" || activeTab === "ask") {
         css += `
-          /* Position #panels over the sidebar for ${tab} tab */
+          /* ═══ ${activeTab.toUpperCase()} TAB: Position #panels over the sidebar ═══ */
           #panels.ytd-watch-flexy,
           ytd-engagement-panel-section-list-renderer#panels {
             display: block !important;
@@ -806,41 +721,38 @@
             min-height: 0 !important;
           }
 
-          /* Flex layout for panel internals — only applied via JS to visible panel */
-          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-warc-visible] {
+          /* Flex layout for panel internals */
+          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible] {
             display: flex !important;
             flex-direction: column !important;
           }
         `;
       }
 
-      // Playlist-specific: stretch playlist to fill the sidebar
-      if (tab === "playlist") {
+      if (activeTab === "chat") {
+        const chatH = `calc(100vh - ${sidebarTop}px)`;
         css += `
-          /* Make playlist fill the sidebar vertically */
-          #secondary-inner.ytd-watch-flexy ytd-playlist-panel-renderer,
-          #secondary-inner.ytd-watch-flexy #playlist {
-            height: 100% !important;
-            max-height: 100% !important;
+          /* Chat: no scroll on the container — the iframe handles its own scroll */
+          #secondary-inner.ytd-watch-flexy {
+            overflow-y: hidden !important;
+            padding: 0 !important;
           }
-        `;
-      }
-
-      // Chat-specific: ensure the live chat iframe fills the sidebar
-      if (tab === "chat") {
-        css += `
-          /* Make live chat iframe fill the sidebar */
           #secondary-inner.ytd-watch-flexy ytd-live-chat-frame,
-          #secondary-inner.ytd-watch-flexy #chat,
-          #secondary-inner.ytd-watch-flexy #chat-container {
+          #secondary-inner.ytd-watch-flexy #chat {
+            display: block !important;
             width: 100% !important;
-            height: 100% !important;
-            min-height: 400px !important;
+            height: ${chatH} !important;
+            max-height: none !important;
+            min-height: 0 !important;
           }
-          #secondary-inner.ytd-watch-flexy ytd-live-chat-frame iframe {
+          #secondary-inner.ytd-watch-flexy ytd-live-chat-frame iframe,
+          #secondary-inner.ytd-watch-flexy #chatframe {
+            display: block !important;
             width: 100% !important;
-            height: 100% !important;
-            min-height: 400px !important;
+            height: ${chatH} !important;
+            max-height: none !important;
+            min-height: 0 !important;
+            border: none !important;
           }
         `;
       }
@@ -849,304 +761,154 @@
     return css;
   }
 
-  // ---- Element Detection Helpers ----
-
-  function isChatElement(child) {
-    if (child.id === "chat") return true;
-    if (child.id === "chat-container") return true;
-    if (child.tagName === "YTD-LIVE-CHAT-FRAME") return true;
-    if (child.querySelector("ytd-live-chat-frame")) return true;
-    if (child.querySelector("iframe[id='chatframe']")) return true;
-    return false;
-  }
-
-  function isPlaylistElement(child) {
-    if (child.id === "playlist") return true;
-    if (child.tagName === "YTD-PLAYLIST-PANEL-RENDERER") return true;
-    if (child.querySelector("ytd-playlist-panel-renderer")) return true;
-    return false;
-  }
-
-  // ---- Visibility Management ----
-
-  /**
-   * Use JavaScript to show/hide direct children of #below and #secondary-inner.
-   */
-  function applyBelowVisibility(tab) {
+  // ── Show / hide #below and #secondary-inner children per tab ──
+  function applyTabVisibility(tab) {
     const below = document.querySelector("#below.ytd-watch-flexy");
     if (below) {
       const children = Array.from(below.children);
-
       if (tab === "description") {
         children.forEach((child) => {
-          const hasMetadata = child.querySelector("ytd-watch-metadata");
-          const isMetaBox = child.classList.contains("box") && hasMetadata;
-          if (isMetaBox || child.id === "alerts" || child.id === "messages") {
-            child.style.display = "";
-          } else {
-            child.style.display = "none";
-          }
+          const hasMeta = child.querySelector("ytd-watch-metadata");
+          child.style.display = (hasMeta || child.id === "alerts") ? "" : "none";
         });
       } else if (tab === "comments") {
         children.forEach((child) => {
           const hasComments = child.querySelector("#comments");
-          const isCommentBox = child.classList.contains("box") && hasComments;
-          if (isCommentBox) {
-            child.style.display = "";
-          } else {
-            child.style.display = "none";
-          }
+          child.style.display = hasComments ? "" : "none";
         });
-        const comments = below.querySelector("#comments");
-        if (comments) {
-          comments.style.display = "";
-        }
       } else {
-        // For non-below tabs, restore all children
-        children.forEach((child) => {
-          child.style.display = "";
-        });
+        children.forEach((child) => { child.style.display = ""; });
       }
     }
 
-    // For secondary-inner tabs, show/hide children
     const secondaryInner = document.querySelector("#secondary-inner.ytd-watch-flexy");
     if (!secondaryInner) return;
-
     const siChildren = Array.from(secondaryInner.children);
 
-    // Get panels container children for chapters/ask tabs
     const panelsContainer = getPanelsContainer();
     const panelChildren = panelsContainer ? Array.from(panelsContainer.children) : [];
 
-    if (tab === "chapters") {
-      // For chapters: hide all secondary-inner children, show only chapter panels
-      siChildren.forEach((child) => {
-        child.style.display = "none";
+    if (tab === "related") {
+      panelChildren.forEach((c) => {
+        c.style.display = "none";
+        c.removeAttribute("data-ytsp-visible");
       });
-
-      panelChildren.forEach((child) => {
-        if (isChapterPanel(child)) {
-          child.style.display = "flex";
-          child.style.flexDirection = "column";
-          child.setAttribute("data-warc-visible", "");
-          child.removeAttribute("hidden");
-          child.style.visibility = "visible";
-          child.setAttribute("visibility", "ENGAGEMENT_PANEL_VISIBILITY_EXPANDED");
-        } else {
-          child.style.display = "none";
-          child.removeAttribute("data-warc-visible");
-        }
-      });
-    } else if (tab === "ask") {
-      // For ask: hide all secondary-inner children, show only ask panels
-      siChildren.forEach((child) => {
-        child.style.display = "none";
-      });
-
-      panelChildren.forEach((child) => {
-        if (isAskPanel(child)) {
-          child.style.display = "flex";
-          child.style.flexDirection = "column";
-          child.setAttribute("data-warc-visible", "");
-          child.removeAttribute("hidden");
-          child.style.visibility = "visible";
-          child.setAttribute("visibility", "ENGAGEMENT_PANEL_VISIBILITY_EXPANDED");
-        } else {
-          child.style.display = "none";
-          child.removeAttribute("data-warc-visible");
-        }
-      });
-    } else if (tab === "related") {
-      // Hide panels when on related tab
-      panelChildren.forEach((child) => {
-        child.style.display = "none";
-        child.removeAttribute("data-warc-visible");
-      });
-
-      siChildren.forEach((child) => {
-        if (child.id === "related") {
-          child.style.display = "";
-        } else {
-          child.style.display = "none";
-        }
+      siChildren.forEach((c) => {
+        c.style.display = c.id === "related" ? "" : "none";
       });
     } else if (tab === "playlist") {
-      panelChildren.forEach((child) => {
-        child.style.display = "none";
-        child.removeAttribute("data-warc-visible");
+      panelChildren.forEach((c) => {
+        c.style.display = "none";
+        c.removeAttribute("data-ytsp-visible");
       });
-
-      siChildren.forEach((child) => {
-        if (isPlaylistElement(child)) {
-          child.style.display = "";
-        } else {
-          child.style.display = "none";
-        }
+      siChildren.forEach((c) => {
+        const isPlaylist = c.id === "playlist" || c.tagName === "YTD-PLAYLIST-PANEL-RENDERER"
+          || c.querySelector("ytd-playlist-panel-renderer");
+        c.style.display = isPlaylist ? "" : "none";
       });
     } else if (tab === "chat") {
-      panelChildren.forEach((child) => {
-        child.style.display = "none";
-        child.removeAttribute("data-warc-visible");
+      panelChildren.forEach((c) => {
+        c.style.display = "none";
+        c.removeAttribute("data-ytsp-visible");
       });
+      siChildren.forEach((c) => {
+        const isChat = c.id === "chat" || c.tagName === "YTD-LIVE-CHAT-FRAME"
+          || c.querySelector("ytd-live-chat-frame");
+        c.style.display = isChat ? "" : "none";
+      });
+    } else if (tab === "chapters") {
+      siChildren.forEach((c) => { c.style.display = "none"; });
 
-      siChildren.forEach((child) => {
-        if (isChatElement(child)) {
-          child.style.display = "";
+      panelChildren.forEach((c) => {
+        if (isChapterPanel(c)) {
+          c.style.display = "flex";
+          c.style.flexDirection = "column";
+          c.setAttribute("data-ytsp-visible", "");
+          c.removeAttribute("hidden");
+          c.style.visibility = "visible";
+          c.setAttribute("visibility", "ENGAGEMENT_PANEL_VISIBILITY_EXPANDED");
         } else {
-          child.style.display = "none";
+          c.style.display = "none";
+          c.removeAttribute("data-ytsp-visible");
         }
       });
-    } else {
-      // For below tabs (description/comments), restore all secondary-inner children
-      // (they're hidden via CSS display:none on the parent)
-      siChildren.forEach((child) => {
-        child.style.display = "";
-      });
 
-      // Also restore all panels
-      panelChildren.forEach((child) => {
-        child.style.display = "";
-        child.style.flexDirection = "";
-        child.removeAttribute("data-warc-visible");
-      });
-    }
-  }
-
-  function removeLayout() {
-    document.body.removeAttribute("warc-active");
-
-    if (styleEl) {
-      styleEl.textContent = "";
-    }
-
-    // Restore #below children visibility
-    const below = document.querySelector("#below.ytd-watch-flexy");
-    if (below) {
-      Array.from(below.children).forEach((child) => {
-        child.style.display = "";
-      });
-    }
-
-    // Restore #secondary-inner children visibility
-    const secondaryInner = document.querySelector("#secondary-inner.ytd-watch-flexy");
-    if (secondaryInner) {
-      Array.from(secondaryInner.children).forEach((child) => {
-        child.style.display = "";
-      });
-    }
-
-    // Restore engagement panels
-    const panelsContainer = getPanelsContainer();
-    if (panelsContainer) {
-      Array.from(panelsContainer.children).forEach((child) => {
-        child.style.display = "";
-        child.style.flexDirection = "";
-        child.style.visibility = "";
-        child.removeAttribute("data-warc-visible");
-      });
-    }
-
-    const tabBarWrapper = document.getElementById("warc-tab-bar-wrapper");
-    if (tabBarWrapper) {
-      tabBarWrapper.style.left = "";
-      tabBarWrapper.style.width = "";
-    }
-    if (resizeBar) {
-      resizeBar.style.left = "";
-    }
-  }
-
-  // ---- Resize Handling ----
-  function onResizeStart(e) {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    isDragging = true;
-    dragStartX = e.clientX;
-    dragStartWidth = playerWidth;
-    resizeBar.classList.add("dragging");
-    resizeBar.setPointerCapture(e.pointerId);
-    document.body.style.cursor = "ew-resize";
-    document.body.style.userSelect = "none";
-    document.body.style.webkitUserSelect = "none";
-    console.log("[WARC] Resize start, width:", playerWidth);
-  }
-
-  function onResizeMove(e) {
-    if (!isDragging) return;
-    e.preventDefault();
-    const delta = e.clientX - dragStartX;
-    const newWidth = dragStartWidth + delta;
-    const vw = document.documentElement.clientWidth;
-    playerWidth = Math.max(300, Math.min(newWidth, Math.round(vw * 0.85)));
-    applyLayout();
-  }
-
-  function onResizeEnd(e) {
-    if (!isDragging) return;
-    isDragging = false;
-    if (e.pointerId !== undefined) {
-      try { resizeBar.releasePointerCapture(e.pointerId); } catch (_) {}
-    }
-    resizeBar.classList.remove("dragging");
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-    document.body.style.webkitUserSelect = "";
-    savePlayerWidth();
-    dispatchPlayerSizeUpdate();
-    console.log("[WARC] Resize end, width:", playerWidth);
-  }
-
-  function dispatchPlayerSizeUpdate() {
-    window.dispatchEvent(new CustomEvent("warc-player-size-update"));
-  }
-
-  // ---- Injected Script ----
-  function injectMainScript() {
-    const s = document.createElement("script");
-    s.src = chrome.runtime.getURL("inject.js");
-    (document.head || document.documentElement).appendChild(s);
-  }
-
-  // ---- Navigation Detection ----
-  function setupNavigationListener() {
-    document.body.addEventListener("yt-navigate-finish", () => {
-      checkWatchPage();
-    });
-
-    document.addEventListener("yt-page-data-updated", () => {
-      if (isOnWatchPage && extensionEnabled) {
-        setTimeout(() => applyLayout(), 500);
+      if (!panelChildren.some(isChapterPanel)) {
+        const chapterTitle = document.querySelector(".ytp-chapter-title.ytp.button");
+        if (chapterTitle) chapterTitle.click();
       }
-    });
-  }
+    } else if (tab === "ask") {
+      siChildren.forEach((c) => { c.style.display = "none"; });
 
-  function checkWatchPage() {
-    isOnWatchPage = window.location.href.includes("/watch");
-
-    if (isOnWatchPage && extensionEnabled) {
-      waitForElement("ytd-watch-flexy").then(() => {
-        setTimeout(() => {
-          applyLayout();
-          startObserver();
-        }, 800);
+      panelChildren.forEach((c) => {
+        if (isAskPanel(c)) {
+          c.style.display = "flex";
+          c.style.flexDirection = "column";
+          c.setAttribute("data-ytsp-visible", "");
+          c.removeAttribute("hidden");
+          c.style.visibility = "visible";
+          c.setAttribute("visibility", "ENGAGEMENT_PANEL_VISIBILITY_EXPANDED");
+        } else {
+          c.style.display = "none";
+          c.removeAttribute("data-ytsp-visible");
+        }
       });
+
+      if (!panelChildren.some(isAskPanel)) {
+        const askBtn = findAskButton();
+        if (askBtn) askBtn.click();
+      }
     } else {
-      removeLayout();
-      stopObserver();
+      siChildren.forEach((c) => { c.style.display = ""; });
+
+      panelChildren.forEach((c) => {
+        c.style.display = "";
+        c.style.flexDirection = "";
+        c.style.visibility = "";
+        c.removeAttribute("data-ytsp-visible");
+      });
     }
   }
 
-  // ---- MutationObserver ----
-  function startObserver() {
-    if (observer) stopObserver();
+  // ── Remove layout (non-watch pages / fullscreen) ─────────────
+  function removeLayout() {
+    document.body.removeAttribute("ytsp-active");
+    if (styleEl) styleEl.textContent = "";
 
-    observer = new MutationObserver(() => {
-      if (!isOnWatchPage || !extensionEnabled || isFullscreen) return;
-      clearTimeout(observer._timer);
-      observer._timer = setTimeout(() => {
-        if (isOnWatchPage && extensionEnabled && !isFullscreen) {
+    const below = document.querySelector("#below.ytd-watch-flexy");
+    if (below) Array.from(below.children).forEach((c) => { c.style.display = ""; });
+
+    const si = document.querySelector("#secondary-inner.ytd-watch-flexy");
+    if (si) Array.from(si.children).forEach((c) => { c.style.display = ""; });
+
+    const panels = getPanelsContainer();
+    if (panels) {
+      Array.from(panels.children).forEach((c) => {
+        c.style.display = "";
+        c.style.flexDirection = "";
+        c.style.visibility = "";
+        c.removeAttribute("data-ytsp-visible");
+      });
+    }
+
+    tabBarEl.style.left = "";
+    tabBarEl.style.width = "";
+    resizeBarEl.style.left = "";
+  }
+
+  // ── Step 8: MutationObserver for DOM changes ─────────────────
+  // Keeps re-applying the layout as YouTube mutates the DOM.
+  // YouTube frequently updates the DOM (e.g., loading comments,
+  // expanding descriptions, toggling panels) which can reset our
+  // CSS overrides. This observer ensures our layout persists.
+  function startDomObserver() {
+    if (domObserver) stopDomObserver();
+
+    domObserver = new MutationObserver(() => {
+      if (!isOnWatchPage || isFullscreen) return;
+      clearTimeout(domObserver._timer);
+      domObserver._timer = setTimeout(() => {
+        if (isOnWatchPage && !isFullscreen) {
           applyLayout();
         }
       }, 300);
@@ -1154,21 +916,21 @@
 
     const watchFlexy = document.querySelector("ytd-watch-flexy");
     if (watchFlexy) {
-      observer.observe(watchFlexy, {
+      domObserver.observe(watchFlexy, {
         childList: true,
         subtree: true,
       });
     }
   }
 
-  function stopObserver() {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
+  function stopDomObserver() {
+    if (domObserver) {
+      domObserver.disconnect();
+      domObserver = null;
     }
   }
 
-  // ---- Fullscreen Detection ----
+  // ── Fullscreen Detection ─────────────────────────────────────
   function setupFullscreenListener() {
     document.addEventListener("fullscreenchange", () => {
       const wasFs = isFullscreen;
@@ -1176,68 +938,66 @@
       if (wasFs !== isFullscreen) {
         if (isFullscreen) {
           removeLayout();
-        } else if (isOnWatchPage && extensionEnabled) {
+        } else if (isOnWatchPage) {
           setTimeout(() => applyLayout(), 300);
         }
       }
     });
   }
 
-  // ---- Message Handling ----
-  function setupMessageListener() {
-    chrome.runtime.onMessage.addListener((msg) => {
-      if (msg.hasOwnProperty("extensionEnabled")) {
-        extensionEnabled = msg.extensionEnabled;
-        if (extensionEnabled && isOnWatchPage) {
-          applyLayout();
-        } else {
-          removeLayout();
-        }
-      }
-      if (msg.message === "reset-divider") {
-        playerWidthPercent = 0.5;
-        calculatePlayerWidth();
-        applyLayout();
-        savePlayerWidth();
-        dispatchPlayerSizeUpdate();
-      }
-    });
+  // ── Resize handle ─────────────────────────────────────────────
+  function onResizeStart(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartWidth = playerWidth;
+    resizeBarEl.classList.add("dragging");
+    resizeBarEl.setPointerCapture(e.pointerId);
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
   }
 
-  // ---- Window Resize ----
-  function setupWindowResize() {
-    let timer;
+  function onResizeMove(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+    const delta = e.clientX - dragStartX;
+    const vw = document.documentElement.clientWidth;
+    playerWidth = Math.max(300, Math.min(dragStartWidth + delta, Math.round(vw * 0.85)));
+    applyLayout();
+  }
+
+  function onResizeEnd(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    try { resizeBarEl.releasePointerCapture(e.pointerId); } catch (_) {}
+    resizeBarEl.classList.remove("dragging");
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    saveWidth();
+  }
+
+  // ── Window resize ─────────────────────────────────────────────
+  function listenForWindowResize() {
     window.addEventListener("resize", () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        if (isOnWatchPage && extensionEnabled && !isFullscreen) {
-          calculatePlayerWidth();
-          applyLayout();
-          dispatchPlayerSizeUpdate();
-        }
-      }, 250);
+      if (isOnWatchPage) applyLayout();
     });
   }
 
-  // ---- Utility ----
-  function waitForElement(selector, timeout = 15000) {
+  // ── Utility: wait for an element in the DOM ───────────────────
+  function waitForElement(selector, timeout = 5000) {
     return new Promise((resolve) => {
-      const el = document.querySelector(selector);
-      if (el) {
-        resolve(el);
-        return;
-      }
-      const obs = new MutationObserver((_, o) => {
-        const el = document.querySelector(selector);
-        if (el) {
-          o.disconnect();
-          resolve(el);
-        }
+      const result = selector();
+      if (result) return resolve(result);
+      let done = false;
+      const observer = new MutationObserver(() => {
+        const r = selector();
+        if (r && !done) { done = true; observer.disconnect(); resolve(r); }
       });
-      obs.observe(document.body, { childList: true, subtree: true });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
       setTimeout(() => {
-        obs.disconnect();
-        resolve(document.querySelector(selector));
+        if (!done) { done = true; observer.disconnect(); resolve(null); }
       }, timeout);
     });
   }

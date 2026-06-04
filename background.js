@@ -1,48 +1,10 @@
-listenPopupMessages();
+/* Background service worker — Manifest V3 */
 
-//////////////// functions
-
-async function getExtensionEnabled() {
-  let extensionEnabled = await getStorageData("extensionEnabled");
-  if (extensionEnabled === undefined) {
-    extensionEnabled = true;
+// On install, notify the user that the extension works across all YouTube pages
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === "install") {
+    console.log("YouTube Side Panel installed. Works across all YouTube SPA navigations.");
+  } else if (details.reason === "update") {
+    console.log("YouTube Side Panel updated to SPA-aware architecture.");
   }
-  return extensionEnabled;
-}
-
-function setExtensionEnabled(value) {
-  chrome.storage.local.set({ extensionEnabled: value }, function () {
-    console.log("data saved");
-  });
-}
-
-function listenPopupMessages() {
-  chrome.runtime.onMessage.addListener(function (
-    request,
-    sender,
-    sendResponse
-  ) {
-    if (request === "get-extension-enabled") {
-      (async () => {
-        const extensionEnabled = await getExtensionEnabled();
-        sendResponse(extensionEnabled);
-      })();
-    } else if (request.hasOwnProperty("extensionEnabled")) {
-      setExtensionEnabled(request.extensionEnabled);
-    }
-    return true;
-  });
-}
-
-function getStorageData(sKey) {
-  return new Promise(function (resolve, reject) {
-    chrome.storage.local.get(sKey, function (items) {
-      if (chrome.runtime.lastError) {
-        console.error(chrome.runtime.lastError.message);
-        reject(chrome.runtime.lastError.message);
-      } else {
-        resolve(items[sKey]);
-      }
-    });
-  });
-}
+});

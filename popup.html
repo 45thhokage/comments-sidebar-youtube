@@ -1,22 +1,182 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <link rel="stylesheet" type="text/css" href="popup.css" />
-  </head>
-  <body>
-    <div>Comments Sidebar for Youtube</div>
-    <div>
-      <input
-        type="checkbox"
-        id="extensionEnabledCheckbox"
-        name="extensionEnabledCheckbox"
-      />
-      <label for="extensionEnabledCheckbox">Extension Enabled</label>
-    </div>
-    <div>
-      <button id="reset-divider">Reset Divider</button>
-    </div>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YouTube Side Panel</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    <script src="popup.js"></script>
-  </body>
+    body {
+      width: 240px;
+      background: #0f0f0f;
+      color: #e3e3e3;
+      font-family: "Roboto", "Arial", sans-serif;
+      font-size: 13px;
+    }
+
+    .header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid #272727;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-icon {
+      width: 24px;
+      height: 24px;
+      background: #ff2d7a;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .header-icon svg {
+      display: block;
+    }
+
+    .header-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #e3e3e3;
+    }
+
+    .header-subtitle {
+      font-size: 11px;
+      color: #888;
+      margin-top: 1px;
+    }
+
+    .section {
+      padding: 12px 16px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    .section:last-child {
+      border-bottom: none;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .status-text {
+      font-size: 12px;
+      color: #aaa;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #666;
+      display: inline-block;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .dot.active {
+      background: #3ea600;
+      box-shadow: 0 0 4px #3ea60066;
+    }
+
+    .info-text {
+      font-size: 11px;
+      color: #666;
+      line-height: 1.5;
+    }
+
+    a {
+      color: #3ea6ff;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .tabs-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .tab-chip {
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-size: 10px;
+      font-weight: 500;
+      background: #1e1e1e;
+      color: #aaa;
+      border: 1px solid #333;
+    }
+
+    .tab-chip.featured {
+      background: #ff2d7a22;
+      color: #ff2d7a;
+      border-color: #ff2d7a44;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-icon">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <rect x="1" y="1" width="5" height="12" rx="1.5" fill="white" opacity="0.9"/>
+        <rect x="8" y="1" width="5" height="8" rx="1.5" fill="white" opacity="0.5"/>
+      </svg>
+    </div>
+    <div>
+      <div class="header-title">YouTube Side Panel</div>
+      <div class="header-subtitle">SPA-aware sidebar for YouTube</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Status</div>
+    <div class="status-row">
+      <span class="status-text" id="status-text">
+        <span class="dot" id="status-dot"></span>
+        <span id="status-label">Checking…</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Tabs</div>
+    <div class="tabs-list">
+      <span class="tab-chip">description</span>
+      <span class="tab-chip featured">comments</span>
+      <span class="tab-chip">chapters</span>
+      <span class="tab-chip">ask</span>
+      <span class="tab-chip">related</span>
+      <span class="tab-chip">playlist</span>
+      <span class="tab-chip">chat</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="info-text">
+      The extension activates on every YouTube page and listens for navigation.
+      Click any video and the sidebar appears automatically — no page reload needed.
+      Drag the red grab bar on the left edge of the panel to reposition it.
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
 </html>

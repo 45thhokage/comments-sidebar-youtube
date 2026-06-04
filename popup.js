@@ -1,46 +1,32 @@
-console.log("hello popup.js");
+/* Popup script — SPA-aware */
 
-getExtensionEnabled();
-extensionEnabledCheckboxListener();
-resetDividerButtonListener();
+document.addEventListener("DOMContentLoaded", () => {
+  const dot = document.getElementById("status-dot");
+  const label = document.getElementById("status-label");
 
-////////////// functions
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    if (!tab?.url) {
+      setStatus(false, "No active tab");
+      return;
+    }
 
-function getExtensionEnabled() {
-  chrome.runtime.sendMessage("get-extension-enabled", function (response) {
-    document.getElementById("extensionEnabledCheckbox").checked = response;
+    const url = new URL(tab.url);
+    const isYouTube = url.hostname === "www.youtube.com" || url.hostname === "youtube.com";
+    const isYouTubeWatch = isYouTube && (url.pathname === "/watch" || url.pathname.startsWith("/watch"));
+
+    if (isYouTubeWatch) {
+      setStatus(true, "Active — sidebar visible");
+    } else if (isYouTube) {
+      // Extension is injected and listening for SPA navigation
+      setStatus(false, "Ready — click any video");
+    } else {
+      setStatus(false, "Not on YouTube");
+    }
   });
-}
 
-function extensionEnabledCheckboxListener() {
-  document
-    .getElementById("extensionEnabledCheckbox")
-    .addEventListener("change", function () {
-      sendMessageSetExtensionEnabled(this.checked);
-    });
-}
-
-async function sendMessageSetExtensionEnabled(value) {
-  chrome.runtime.sendMessage({ extensionEnabled: value });
-
-  let query = {};
-  let tabs = await chrome.tabs.query(query);
-  tabs.forEach((tab) => {
-    chrome.tabs.sendMessage(tab.id, { extensionEnabled: value });
-  });
-}
-
-function resetDividerButtonListener() {
-  const resetDividerBtn = document.getElementById("reset-divider");
-  resetDividerBtn.addEventListener("click", () => {
-    sendResetDividerMessageToContentScript();
-  });
-}
-
-async function sendResetDividerMessageToContentScript() {
-  let query = {};
-  let tabs = await chrome.tabs.query(query);
-  tabs.forEach((tab) => {
-    chrome.tabs.sendMessage(tab.id, { message: "reset-divider" });
-  });
-}
+  function setStatus(active, text) {
+    dot.className = "dot" + (active ? " active" : "");
+    label.textContent = text;
+  }
+});

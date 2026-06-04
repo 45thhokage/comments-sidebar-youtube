@@ -1,11 +1,10 @@
-/* ============================================
-   Comments Sidebar for YouTube - Content Styles
-   Updated for 2025 YouTube DOM structure
-   ============================================ */
+/* YouTube Side Panel — Static styles
+   Dynamic layout (player size, sidebar position) is injected via
+   a <style id="ytsp-dynamic-styles"> tag written by content.js
+   ============================================================== */
 
-/* Container: fixed overlay that doesn't intercept events.
-   Children (tab headings, resize bar) are pointer-events: auto individually. */
-#warc-app {
+/* ── App root — zero-size transparent overlay ──────────────── */
+#ytsp-app {
   display: none;
   position: fixed;
   top: 0;
@@ -16,103 +15,65 @@
   z-index: 99999;
 }
 
-body[warc-active] #warc-app {
+body[ytsp-active] #ytsp-app {
   display: block;
 }
 
-/* ---- Tab Bar Wrapper ---- */
-#warc-tab-bar-wrapper {
+/* ── Tab bar ────────────────────────────────────────────────── */
+#ytsp-tab-bar {
   position: fixed;
   top: 56px;
-  z-index: 99999;
+  height: 38px;
   display: flex;
   align-items: center;
-  height: 36px;
-  box-sizing: border-box;
+  padding: 0 6px;
+  gap: 2px;
+  z-index: 99999;
   pointer-events: auto;
   background: var(--yt-spec-general-background-a, #0f0f0f);
-  border-bottom: 1px solid var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.1));
-}
-
-/* ---- Scroll Buttons ---- */
-#warc-scroll-left,
-#warc-scroll-right {
-  display: none; /* shown dynamically via JS */
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 100%;
-  min-width: 24px;
-  border: none;
-  background: var(--yt-spec-general-background-a, #0f0f0f);
-  color: var(--yt-spec-text-secondary, #aaa);
-  cursor: pointer;
-  font-size: 10px;
-  padding: 0;
-  flex-shrink: 0;
-  transition: background-color 0.15s ease, color 0.15s ease;
-  z-index: 1;
-}
-
-#warc-scroll-left:hover,
-#warc-scroll-right:hover {
-  background: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.1));
-  color: var(--yt-spec-text-primary, #fff);
-}
-
-/* ---- Scrollable Tab Container ---- */
-#warc-tab-scroll-container {
-  flex: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-sizing: border-box;
   overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
-  min-width: 0; /* Allow shrinking */
+  scrollbar-width: none;
 }
 
-/* Hide scrollbar on tab scroll container for clean look */
-#warc-tab-scroll-container::-webkit-scrollbar {
+#ytsp-tab-bar::-webkit-scrollbar {
   display: none;
 }
 
-/* ---- Tab Headings Bar ---- */
-#warc-tab-headings {
-  display: flex;
-  align-items: center;
-  padding: 4px 12px;
-  gap: 4px;
-  height: 36px;
-  box-sizing: border-box;
-  white-space: nowrap;
-}
-
-#warc-tab-headings button {
-  font-size: 12px;
+#ytsp-tab-bar button {
+  font-family: "Roboto", "Arial", sans-serif;
+  font-size: 11px;
   font-weight: 500;
+  text-transform: lowercase;
+  letter-spacing: 0.3px;
   border: none;
-  padding: 5px 14px;
+  padding: 5px 11px;
   cursor: pointer;
   border-radius: 18px;
   background: transparent;
   color: var(--yt-spec-text-secondary, #aaa);
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background 0.15s, color 0.15s;
   white-space: nowrap;
+  flex-shrink: 0;
+  pointer-events: auto;
+  outline: none;
   line-height: 1.2;
-  flex-shrink: 0; /* Don't shrink — scroll instead */
 }
 
-#warc-tab-headings button:hover {
-  background: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.1));
+#ytsp-tab-bar button:hover {
+  background: rgba(255, 255, 255, 0.08);
   color: var(--yt-spec-text-primary, #fff);
 }
 
-#warc-tab-headings button.active {
-  background: #ea4c89;
+#ytsp-tab-bar button.active {
+  background: #ff2d7a;
   color: #fff;
+  font-weight: 600;
 }
 
-/* ---- Resize Bar ---- */
-#warc-resize-bar {
+/* ── Resize bar ─────────────────────────────────────────────── */
+#ytsp-resize-bar {
   position: fixed;
   top: 56px;
   bottom: 0;
@@ -121,53 +82,69 @@ body[warc-active] #warc-app {
   cursor: ew-resize;
   touch-action: none;
   pointer-events: auto;
-  /* Center the bar so the visual line sits at the player edge.
-     Negative margin shifts left so center of the 14px bar is at the player edge. */
-  margin-left: -7px;
+  margin-left: -7px; /* center the hit-target over the player edge */
+  display: flex;
+  align-items: stretch;
 }
 
-#warc-resize-bar > div {
+/* Visual line inside the bar */
+#ytsp-resize-bar > div {
   width: 2px;
-  height: 100%;
   margin: 0 auto;
-  background-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 1px;
-  transition: background-color 0.2s ease, width 0.2s ease;
+  transition: background 0.2s, width 0.2s;
+  align-self: stretch;
 }
 
-#warc-resize-bar:hover > div {
-  background-color: rgba(234, 76, 137, 0.6);
-  width: 4px;
+#ytsp-resize-bar:hover > div {
+  background: rgba(231, 76, 60, 0.7);
+  width: 3px;
 }
 
-#warc-resize-bar.dragging > div {
-  background-color: #ea4c89;
-  width: 4px;
+#ytsp-resize-bar.dragging > div {
+  background: #e74c3c;
+  width: 3px;
 }
 
-#warc-resize-bar:hover,
-#warc-resize-bar.dragging {
-  background: rgba(234, 76, 137, 0.08);
+#ytsp-resize-bar:hover,
+#ytsp-resize-bar.dragging {
+  background: rgba(231, 76, 60, 0.06);
 }
 
-/* ---- Scrollbar styling ---- */
-body[warc-active] #below::-webkit-scrollbar,
-body[warc-active] #secondary-inner::-webkit-scrollbar {
-  width: 6px;
+/* ── Scrollbar polish for sidebar areas ─────────────────────── */
+body[ytsp-active] #below::-webkit-scrollbar,
+body[ytsp-active] #secondary-inner::-webkit-scrollbar {
+  width: 5px;
 }
 
-body[warc-active] #below::-webkit-scrollbar-thumb,
-body[warc-active] #secondary-inner::-webkit-scrollbar-thumb {
+body[ytsp-active] #below::-webkit-scrollbar-thumb,
+body[ytsp-active] #secondary-inner::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
 }
 
-body[warc-active] #below::-webkit-scrollbar-thumb:hover,
-body[warc-active] #secondary-inner::-webkit-scrollbar-thumb:hover {
+body[ytsp-active] #below::-webkit-scrollbar-thumb:hover,
+body[ytsp-active] #secondary-inner::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
 }
 
-body[warc-active] #below::-webkit-scrollbar-track,
-body[warc-active] #secondary-inner::-webkit-scrollbar-track {
+body[ytsp-active] #below::-webkit-scrollbar-track,
+body[ytsp-active] #secondary-inner::-webkit-scrollbar-track,
+body[ytsp-active] #panels::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ── Scrollbar polish for panels container (ask/chapters) ──── */
+body[ytsp-active] #panels::-webkit-scrollbar {
+  width: 5px;
+}
+
+body[ytsp-active] #panels::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+body[ytsp-active] #panels::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }

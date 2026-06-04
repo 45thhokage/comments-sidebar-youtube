@@ -1,117 +1,288 @@
 /**
- * Comments Sidebar for YouTube - Injected Script
- * Runs in the page's context to patch ytd-watch-flexy layout calculations.
+ * inject.js — Runs in YouTube's MAIN world (page context)
+ *
+ * This script patches YouTube's internal layout logic to prevent conflicts
+ * with the extension's CSS-based sidebar layout. Without these patches,
+ * YouTube's Polymer elements recalculate their own layout on every state
+ * change, overriding our fixed positioning and causing visual glitches.
+ *
+ * Key patches:
+ *   1. Override ytd-watch-flexy's computeLayout_ to be a no-op when our
+ *      layout is active (body has ytsp-active attribute).
+ *   2. Patch the theater-mode attribute setter so YouTube doesn't reset
+ *      our column widths.
+ *   3. Intercept style recalculation on ytd-watch-flexy to prevent
+ *      inline style overrides.
+ *   4. Suppress YouTube's own flex attribute updates that conflict with
+ *      our CSS.
  */
 
 (function () {
   "use strict";
 
-  let watchFlexy = null;
-  let playerEl = null;
-  let originalIsTwoColumnsValue = false;
-  let originalCalculatePlayerSize = null;
-  let isPatched = false;
+  const TAG = "[YTSP-inject]";
 
-  if (document.readyState === "complete") {
-    init();
-  } else {
-    document.onreadystatechange = function () {
-      if (document.readyState === "complete") init();
-    };
+  // ── Utility: check if our extension layout is currently active ──
+  function isYTSPActive() {
+    return document.body && document.body.hasAttribute("ytsp-active");
   }
 
-  function init() {
-    waitForKeyElement("ytd-watch-flexy", (el) => {
-      watchFlexy = el;
-      patchWatchFlexy();
-    });
-    waitForKeyElement("#player.ytd-watch-flexy", (el) => {
-      playerEl = el;
-    });
-  }
+  // ── Patch 1: Override computeLayout_ on ytd-watch-flexy ────────
+  // YouTube's ytd-watch-flexy element has a computeLayout_ method that
+  // recalculates column widths, flex attributes, and inline styles. We
+  // replace it with a no-op when our layout is active so it doesn't
+  // fight our CSS overrides.
+  function patchComputeLayout() {
+    const waitForFlexy = setInterval(() => {
+      const flexy = document.querySelector("ytd-watch-flexy");
+      if (!flexy) return;
 
-  function patchWatchFlexy() {
-    if (!watchFlexy || isPatched) return;
+      // Check if it has the method we want to patch
+      if (typeof flexy.computeLayout_ === "function") {
+        const originalComputeLayout = flexy.computeLayout_.bind(flexy);
 
-    try {
-      originalIsTwoColumnsValue = watchFlexy.isTwoColumns_;
-      Object.defineProperty(watchFlexy, "isTwoColumns_", {
-        get: function () { return false; },
-        set: function (val) { originalIsTwoColumnsValue = val; },
-        configurable: true,
-      });
-    } catch (e) {
-      console.warn("[WARC] Could not override isTwoColumns_:", e.message);
-    }
-
-    try {
-      if (typeof watchFlexy.calculateCurrentPlayerSize_ === "function") {
-        originalCalculatePlayerSize = watchFlexy.calculateCurrentPlayerSize_;
-        watchFlexy.calculateCurrentPlayerSize_ = function () {
-          if (playerEl) {
-            const width = playerEl.clientWidth || 854;
-            const height = (document.documentElement.clientHeight || 600) - 56;
-            return { width: width, height: height };
+        flexy.computeLayout_ = function () {
+          if (isYTSPActive()) {
+            // Our layout is active — skip YouTube's layout computation
+            // to prevent it from overriding our CSS
+            return;
           }
-          return originalCalculatePlayerSize
-            ? originalCalculatePlayerSize.call(this)
-            : { width: 854, height: 480 };
+          // Not our page — let YouTube handle layout normally
+          return originalComputeLayout();
         };
+
+        console.log(TAG, "Patched computeLayout_ on ytd-watch-flexy");
+        clearInterval(waitForFlexy);
       }
-    } catch (e) {
-      console.warn("[WARC] Could not override calculateCurrentPlayerSize_:", e.message);
-    }
+    }, 500);
 
-    isPatched = true;
-    schedulePlayerUpdate();
+    // Give up after 30 seconds if the element never appears
+    setTimeout(() => clearInterval(waitForFlexy), 30000);
   }
 
-  function unpatchWatchFlexy() {
-    if (!watchFlexy || !isPatched) return;
-    try {
-      delete watchFlexy.isTwoColumns_;
-      watchFlexy.isTwoColumns_ = originalIsTwoColumnsValue;
-    } catch (e) {}
-    try {
-      if (originalCalculatePlayerSize) {
-        watchFlexy.calculateCurrentPlayerSize_ = originalCalculatePlayerSize;
-        originalCalculatePlayerSize = null;
+  // ── Patch 2: Prevent flex attribute overrides on #columns ──────
+  // YouTube sets flex attributes like flex="1 1 1e9px" on #primary and
+  // #secondary elements. When our layout is active, we need these to
+  // not override our CSS. We intercept setAttribute on these elements.
+  function patchFlexAttributes() {
+    const observer = new MutationObserver((mutations) => {
+      if (!isYTSPActive()) return;
+
+      for (const mutation of mutations) {
+        if (mutation.type === "attributes" && mutation.attributeName === "flex") {
+          const target = mutation.target;
+          // Remove the flex attribute that YouTube just set — our CSS
+          // handles all layout via fixed positioning
+          if (target.id === "primary" || target.id === "secondary" ||
+              target.id === "primary-inner" || target.id === "secondary-inner") {
+            target.removeAttribute("flex");
+          }
+        }
+        // Also handle "width-changed" and "css-flex-attr" attributes
+        if (mutation.type === "attributes" &&
+            (mutation.attributeName === "width-changed" ||
+             mutation.attributeName === "css-flex-attr")) {
+          const target = mutation.target;
+          if (target.id === "primary" || target.id === "secondary") {
+            target.removeAttribute(mutation.attributeName);
+          }
+        }
       }
-    } catch (e) {}
-    isPatched = false;
-    schedulePlayerUpdate();
+    });
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ["flex", "width-changed", "css-flex-attr"],
+    });
   }
 
-  function schedulePlayerUpdate() {
-    if (!watchFlexy) return;
-    if (typeof watchFlexy.schedulePlayerSizeUpdate_ === "function") {
-      try { watchFlexy.schedulePlayerSizeUpdate_(); } catch (e) {}
-    }
+  // ── Patch 3: Prevent inline style overrides on key elements ────
+  // YouTube sometimes sets inline styles (width, max-width, etc.) on
+  // #primary, #secondary, #columns. When our layout is active, these
+  // inline styles can override our CSS rules. We use a MutationObserver
+  // to strip conflicting inline styles.
+  function patchInlineStyles() {
+    const CONFLICTING_PROPS = ["width", "max-width", "min-width", "flex", "flex-basis"];
+
+    const observer = new MutationObserver((mutations) => {
+      if (!isYTSPActive()) return;
+
+      for (const mutation of mutations) {
+        if (mutation.type === "attributes" && mutation.attributeName === "style") {
+          const target = mutation.target;
+          if (!(target instanceof HTMLElement)) continue;
+
+          // Only strip inline styles from layout-critical elements
+          const isLayoutElement =
+            target.id === "primary" || target.id === "secondary" ||
+            target.id === "primary-inner" || target.id === "secondary-inner" ||
+            target.id === "columns" || target.id === "player" ||
+            target.id === "player-container-outer" || target.id === "player-container-inner" ||
+            target.id === "player-container" || target.id === "below" ||
+            target.tagName === "YTD-WATCH-FLexy".toUpperCase() ||
+            target.classList?.contains("html5-video-container");
+
+          // Normalize tag name comparison
+          const tagUpper = target.tagName?.toUpperCase?.() || "";
+          const isLayoutElementFinal = isLayoutElement ||
+            tagUpper === "YTD-WATCH-FLexy".toUpperCase() ||
+            tagUpper === "YTD-WATCH-FLEXY";
+
+          if (isLayoutElementFinal) {
+            // Remove conflicting inline style properties
+            let modified = false;
+            for (const prop of CONFLICTING_PROPS) {
+              if (target.style[prop]) {
+                target.style.removeProperty(prop);
+                modified = true;
+              }
+            }
+            // Also remove padding-bottom on player-container-inner
+            if (target.id === "player-container-inner" && target.style.paddingBottom) {
+              target.style.removeProperty("padding-bottom");
+              modified = true;
+            }
+          }
+        }
+      }
+    });
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ["style"],
+    });
   }
 
-  // Listen for custom events
-  window.addEventListener("warc-player-size-update", schedulePlayerUpdate);
-  window.addEventListener("schedule-player-size-update", schedulePlayerUpdate);
+  // ── Patch 4: Prevent theater mode from breaking our layout ─────
+  // When YouTube enters theater mode, it restructures the DOM and
+  // applies its own full-width layout. We need to detect this and
+  // ensure our layout still works.
+  function patchTheaterMode() {
+    const observer = new MutationObserver((mutations) => {
+      if (!isYTSPActive()) return;
 
-  window.addEventListener("extension-enabled", (e) => {
-    if (e.detail) {
-      if (!isPatched) patchWatchFlexy();
-      schedulePlayerUpdate();
-    } else {
-      unpatchWatchFlexy();
-    }
-  });
+      for (const mutation of mutations) {
+        if (mutation.type === "attributes" && mutation.attributeName === "theater") {
+          const flexy = mutation.target;
+          if (flexy.tagName?.toUpperCase() === "YTD-WATCH-FLEXY") {
+            // Re-trigger layout recalculation after theater mode change
+            // The content script's MutationObserver will pick this up
+            // and re-apply our layout CSS
+            console.log(TAG, "Theater mode changed, layout will be re-applied by content script");
+          }
+        }
+      }
+    });
 
-  // Also dispatch the legacy inject-ready event
-  window.dispatchEvent(new CustomEvent("inject-ready"));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ["theater"],
+    });
+  }
 
-  function waitForKeyElement(selector, callback) {
-    const el = document.querySelector(selector);
-    if (el) { callback(el); return; }
-    const timer = setInterval(() => {
-      const el = document.querySelector(selector);
-      if (el) { clearInterval(timer); callback(el); }
-    }, 300);
-    setTimeout(() => clearInterval(timer), 30000);
+  // ── Patch 5: Override isTwoColumns_ to always return true ──────
+  // YouTube uses isTwoColumns_() to decide whether to show the side-
+  // by-side layout. If it returns false, YouTube collapses into a
+  // single-column layout, hiding #secondary. We force it to return
+  // true so our sidebar always has content.
+  function patchIsTwoColumns() {
+    const waitForFlexy = setInterval(() => {
+      const flexy = document.querySelector("ytd-watch-flexy");
+      if (!flexy) return;
+
+      if (typeof flexy.isTwoColumns_ === "function") {
+        const originalIsTwoColumns = flexy.isTwoColumns_.bind(flexy);
+
+        flexy.isTwoColumns_ = function () {
+          if (isYTSPActive()) {
+            return true;
+          }
+          return originalIsTwoColumns();
+        };
+
+        console.log(TAG, "Patched isTwoColumns_ on ytd-watch-flexy");
+        clearInterval(waitForFlexy);
+      }
+    }, 500);
+
+    setTimeout(() => clearInterval(waitForFlexy), 30000);
+  }
+
+  // ── Patch 6: Force #secondary to be visible ───────────────────
+  // YouTube sometimes hides #secondary with attribute hidden or
+  // display:none. When our layout is active, we need #secondary to
+  // remain in the DOM so we can show its contents in our sidebar.
+  function patchSecondaryVisibility() {
+    const observer = new MutationObserver((mutations) => {
+      if (!isYTSPActive()) return;
+
+      for (const mutation of mutations) {
+        if (mutation.type === "attributes") {
+          const target = mutation.target;
+          if (target.id === "secondary" && target.tagName?.toUpperCase() === "DIV") {
+            // Remove the "hidden" attribute that YouTube may add
+            if (target.hasAttribute("hidden")) {
+              target.removeAttribute("hidden");
+            }
+          }
+        }
+      }
+    });
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ["hidden"],
+    });
+  }
+
+  // ── Re-patch after SPA navigation ─────────────────────────────
+  // YouTube's SPA navigation may replace the ytd-watch-flexy element
+  // entirely, which means our patches on the old element are lost.
+  // We listen for navigation events to re-apply patches.
+  function setupNavigationRepatch() {
+    document.addEventListener("yt-navigate-finish", () => {
+      // YouTube may create a new ytd-watch-flexy element after navigation,
+      // so we need to re-patch it. Use a small delay to let the DOM settle.
+      setTimeout(() => {
+        patchComputeLayout();
+        patchIsTwoColumns();
+      }, 1000);
+    });
+
+    document.addEventListener("yt-page-data-updated", () => {
+      setTimeout(() => {
+        patchComputeLayout();
+        patchIsTwoColumns();
+      }, 1000);
+    });
+  }
+
+  // ── Initialize all patches ────────────────────────────────────
+  function init() {
+    console.log(TAG, "Initializing page-context patches");
+
+    // Attribute-level patches (work on any page, cheap to run)
+    patchFlexAttributes();
+    patchInlineStyles();
+    patchTheaterMode();
+    patchSecondaryVisibility();
+
+    // Element-level patches (need ytd-watch-flexy to exist)
+    patchComputeLayout();
+    patchIsTwoColumns();
+
+    // Re-patch on SPA navigation
+    setupNavigationRepatch();
+  }
+
+  // Run immediately since we're injected at document_start
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
   }
 })();
