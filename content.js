@@ -40,8 +40,11 @@
   const TAB_BAR_HEIGHT = 38;
   const SIDEBAR_PADDING = 8;
   const STORAGE_KEY = "ytSidePanelPlayerWidthPercent";
-  const TABS = ["description", "comments", "chapters", "ask", "related", "playlist", "chat"];
+  const TABS = ["description", "comments", "ycs", "chapters", "ask", "related", "playlist", "chat"];
   const BELOW_TABS = new Set(["description", "comments"]);
+  // ycs tab is a secondary tab that hosts the YouTube Comment Search extension UI
+  // It requires #secondary-inner to be visible so the YCS shadow root element
+  // (plasmo-yck-root-sidebar) remains accessible and interactive.
 
   // ── State ────────────────────────────────────────────────────
   let isOnWatchPage = false;
@@ -729,6 +732,39 @@
         `;
       }
 
+      if (activeTab === "ycs") {
+        css += `
+          /* ═══ YCS TAB: YouTube Comment Search extension ════════════ */
+          /* Make #secondary-inner fill the sidebar area for YCS content */
+          #secondary-inner.ytd-watch-flexy {
+            overflow-y: auto !important;
+          }
+
+          /* The YCS extension mounts a shadow DOM host element with id
+             plasmo-yck-root-sidebar at the start of #secondary-inner.
+             Make it fill the entire sidebar. */
+          #secondary-inner.ytd-watch-flexy > #plasmo-yck-root-sidebar,
+          #secondary-inner.ytd-watch-flexy > [id^="plasmo-yck-root-"] {
+            display: block !important;
+            width: 100% !important;
+            min-height: calc(100vh - ${sidebarTop}px) !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+
+          /* Ensure the shadow container inside fills available space */
+          #secondary-inner.ytd-watch-flexy > #plasmo-yck-root-sidebar > *,
+          #secondary-inner.ytd-watch-flexy > [id^="plasmo-yck-root-"] > * {
+            min-height: calc(100vh - ${sidebarTop}px) !important;
+          }
+
+          /* Ensure the plasmo shadow container stretches */
+          #plasmo-shadow-container {
+            min-height: calc(100vh - ${sidebarTop}px) !important;
+          }
+        `;
+      }
+
       if (activeTab === "chat") {
         const chatH = `calc(100vh - ${sidebarTop}px)`;
         css += `
@@ -815,6 +851,21 @@
         const isChat = c.id === "chat" || c.tagName === "YTD-LIVE-CHAT-FRAME"
           || c.querySelector("ytd-live-chat-frame");
         c.style.display = isChat ? "" : "none";
+      });
+    } else if (tab === "ycs") {
+      // YCS tab: Show the YouTube Comment Search extension UI.
+      // The YCS extension (by Plasmo) mounts a shadow DOM element
+      // with id "plasmo-yck-root-sidebar" at the start of #secondary-inner.
+      // We hide all other #secondary-inner children except this element,
+      // and hide engagement panels too.
+      panelChildren.forEach((c) => {
+        c.style.display = "none";
+        c.removeAttribute("data-ytsp-visible");
+      });
+      siChildren.forEach((c) => {
+        const isYcsRoot = c.id === "plasmo-yck-root-sidebar" ||
+                          c.id?.startsWith("plasmo-yck-root-");
+        c.style.display = isYcsRoot ? "" : "none";
       });
     } else if (tab === "chapters") {
       siChildren.forEach((c) => { c.style.display = "none"; });

@@ -135,6 +135,34 @@ body[ytsp-active] #panels::-webkit-scrollbar-track {
   background: transparent;
 }
 
+/* ── YCS tab button highlight ───────────────────────────────── */
+#ytsp-tab-bar button[data-tab="ycs"].active {
+  background: #3ea6ff;
+  color: #0f0f0f;
+  font-weight: 600;
+}
+
+/* ── YCS panel container ─────────────────────────────────────── */
+/* When the ycs tab is active, ensure the YCS shadow root fills
+   the sidebar. The YCS extension (built with Plasmo) creates a
+   host element with id "plasmo-yck-root-sidebar" inside
+   #secondary-inner, and renders its React UI inside a shadow DOM.
+   These styles help it fill the sidebar panel area correctly. */
+body[ytsp-active] #secondary-inner > [id^="plasmo-yck-root-"] {
+  position: relative;
+  z-index: 1;
+}
+
+/* Ensure YCS shadow DOM content has proper scroll */
+body[ytsp-active] #secondary-inner > [id^="plasmo-yck-root-"]::-webkit-scrollbar {
+  width: 5px;
+}
+
+body[ytsp-active] #secondary-inner > [id^="plasmo-yck-root-"]::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
 /* ── Scrollbar polish for panels container (ask/chapters) ──── */
 body[ytsp-active] #panels::-webkit-scrollbar {
   width: 5px;

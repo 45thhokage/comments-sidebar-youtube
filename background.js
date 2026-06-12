@@ -5,6 +5,6 @@ chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") {
     console.log("YouTube Side Panel installed. Works across all YouTube SPA navigations.");
   } else if (details.reason === "update") {
-    console.log("YouTube Side Panel updated to SPA-aware architecture.");
+    console.log("YouTube Side Panel updated to SPA-aware architecture with YCS integration.");
   }
 });

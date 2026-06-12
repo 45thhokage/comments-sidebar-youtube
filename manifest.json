@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "YouTube Side Panel",
-  "version": "1.1.0",
-  "description": "Adds a draggable side panel to YouTube watch pages with tabs for description, comments, chapters, and more. Works across SPA navigations.",
+  "version": "1.2.0",
+  "description": "Adds a draggable side panel to YouTube watch pages with tabs for description, comments, YCS (Comment Search), chapters, and more. Works across SPA navigations.",
   "permissions": [],
   "host_permissions": [
     "https://www.youtube.com/*"
