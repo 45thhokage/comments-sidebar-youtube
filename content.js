@@ -520,78 +520,88 @@
     playerWidth = Math.max(320, Math.min(playerWidth, Math.round(vw * 0.85)));
   }
 
+  let isApplyingLayout = false;
+
   function applyLayout() {
+    if (isApplyingLayout) return;
+    isApplyingLayout = true;
+    try {
     if (!isOnWatchPage || isFullscreen) { removeLayout(); return; }
     if (!isDragging) calculatePlayerWidth();
 
     const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
     const sidebarLeft = playerWidth + DIVIDER_WIDTH;
     const sidebarWidth = vw - sidebarLeft - SIDEBAR_PADDING;
     const sidebarTop = HEADER_HEIGHT + TAB_BAR_HEIGHT;
 
     document.body.setAttribute("ytsp-active", "");
 
-    // Position the tab bar and resize bar
-    tabBarEl.style.left = sidebarLeft + "px";
-    tabBarEl.style.width = sidebarWidth + SIDEBAR_PADDING + "px";
-    resizeBarEl.style.left = playerWidth + "px";
-
+    // Build the CSS — player gets no explicit top; it's computed below
     styleEl.textContent = buildCSS(playerWidth, sidebarLeft, sidebarWidth, sidebarTop);
 
+    // Signal YouTube to recalculate control positions (scrubber, chapters,
+    // clip markers, volume, etc.). YouTube's player JS listens for window
+    // resize and updates inline widths on .ytp-chrome-bottom and related
+    // elements. Without this, those inline widths stay at their init-time
+    // values even though the player's actual width has changed, causing
+    // sub-elements (scrubber thumb, clip markers, etc.) to desync.
+    window.dispatchEvent(new Event("resize"));
+
+    // Measure the player and vertically center it in the available space
+    const playerEl = document.querySelector("#player.ytd-watch-flexy");
+    if (playerEl) {
+      const ph = playerEl.offsetHeight;
+      const availableH = vh - HEADER_HEIGHT;
+      const top = HEADER_HEIGHT + Math.max(0, (availableH - ph) / 2);
+      playerEl.style.top = top + "px";
+      resizeBarEl.style.top = top + "px";
+      resizeBarEl.style.height = ph + "px";
+    }
+
+    // Position the tab bar and resize bar
+    resizeBarEl.style.left = playerWidth + "px";
+    tabBarEl.style.left = sidebarLeft + "px";
+    tabBarEl.style.width = sidebarWidth + SIDEBAR_PADDING + "px";
+
     applyTabVisibility(activeTab);
+    } finally { isApplyingLayout = false; }
   }
 
   function buildCSS(pw, sidebarLeft, sidebarWidth, sidebarTop) {
     const h = HEADER_HEIGHT;
-    const viewH = `calc(100vh - ${h}px)`;
 
     let css = `
-      /* ═══ PLAYER: fixed left column ════════════════════════════ */
+      /* ═══ PLAYER: fixed left column ════════════════════════════
+         Strategy: resize only the outermost #player.ytd-watch-flexy.
+         Everything inside (container-outer → container-inner →
+         movie_player → controls) keeps its natural YouTube layout.
+         The aspect ratio set by YouTube's inline padding-bottom on
+         #player-container-inner determines the player height — no
+         explicit height overrides needed.  This means YouTube's JS
+         reads real offsetWidth/offsetHeight on all sub-elements and
+         positions controls, scrubber, chapters, clip markers etc.
+         correctly on every frame, with no desync.                    */
       #player.ytd-watch-flexy {
         position: fixed !important;
         left: 0 !important;
-        top: ${h}px !important;
         width: ${pw}px !important;
-        height: ${viewH} !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
         z-index: 100 !important;
       }
       #player-container-outer.ytd-watch-flexy {
-        width: ${pw}px !important;
-        height: ${viewH} !important;
         max-width: none !important;
         min-width: 0 !important;
-      }
-      #player-container-inner {
-        padding-bottom: 0 !important;
-        width: ${pw}px !important;
-        height: ${viewH} !important;
-      }
-      #player-container {
-        width: ${pw}px !important;
-        height: ${viewH} !important;
-      }
-      #movie_player {
-        width: ${pw}px !important;
-        height: ${viewH} !important;
-      }
-      .html5-video-container {
-        width: ${pw}px !important;
-        height: ${viewH} !important;
-      }
-      .html5-video-container video {
-        width: ${pw}px !important;
-        height: ${viewH} !important;
-        object-fit: contain !important;
-        left: 0 !important;
-        top: 0 !important;
       }
       /* Theater mode */
       ytd-watch-flexy[theater] #player-theater-container {
         position: fixed !important;
         left: 0 !important;
-        top: ${h}px !important;
         width: ${pw}px !important;
-        height: ${viewH} !important;
+        height: auto !important;
+        min-height: 0 !important;
         max-width: none !important;
         margin: 0 !important;
         z-index: 100 !important;
