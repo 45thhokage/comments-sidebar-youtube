@@ -36,8 +36,10 @@
 
   // ── Constants ────────────────────────────────────────────────
   const HEADER_HEIGHT = 56;
-  const DIVIDER_WIDTH = 8;   // width of the resize bar hit target
+  const DIVIDER_WIDTH = 8;   // gap between player and resize bar
+  const GRAB_BAR_WIDTH = 14; // width of the resize bar hit target
   const TAB_BAR_HEIGHT = 38;
+  const videoGap = true;     // gap between player and resize bar
   const SIDEBAR_PADDING = 8;
   const STORAGE_KEY = "ytSidePanelPlayerWidthPercent";
   const TABS = ["description", "comments", "ycs", "chapters", "ask", "related", "playlist", "chat"];
@@ -531,7 +533,8 @@
 
     const vw = document.documentElement.clientWidth;
     const vh = window.innerHeight;
-    const sidebarLeft = playerWidth + DIVIDER_WIDTH;
+    const gap = videoGap ? DIVIDER_WIDTH : 0;
+    const sidebarLeft = playerWidth + gap + GRAB_BAR_WIDTH;
     const sidebarWidth = vw - sidebarLeft - SIDEBAR_PADDING;
     const sidebarTop = HEADER_HEIGHT + TAB_BAR_HEIGHT;
 
@@ -555,12 +558,10 @@
       const availableH = vh - HEADER_HEIGHT;
       const top = HEADER_HEIGHT + Math.max(0, (availableH - ph) / 2);
       playerEl.style.top = top + "px";
-      resizeBarEl.style.top = top + "px";
-      resizeBarEl.style.height = ph + "px";
     }
 
-    // Position the tab bar and resize bar
-    resizeBarEl.style.left = playerWidth + "px";
+    // Position the resize bar and tab bar
+    resizeBarEl.style.left = playerWidth + gap + "px";
     tabBarEl.style.left = sidebarLeft + "px";
     tabBarEl.style.width = sidebarWidth + SIDEBAR_PADDING + "px";
 

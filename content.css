@@ -82,7 +82,6 @@ body[ytsp-active] #ytsp-app {
   cursor: ew-resize;
   touch-action: none;
   pointer-events: auto;
-  margin-left: -7px; /* center the hit-target over the player edge */
   display: flex;
   align-items: stretch;
 }
