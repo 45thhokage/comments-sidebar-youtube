@@ -1,9 +1,10 @@
 /* YouTube Side Panel — Static styles
    Dynamic layout (player size, sidebar position) is injected via
-   a <style id="ytsp-dynamic-styles"> tag written by content.js
+   a <style id="ytsp-dynamic-styles"> tag written by content/index.js
+   Dimensions use CSS custom properties set by JS at init time so they
+   stay in sync with the JS constants (HEADER_HEIGHT, TAB_BAR_HEIGHT).
    ============================================================== */
 
-/* ── App root — zero-size transparent overlay ──────────────── */
 #ytsp-app {
   display: none;
   position: fixed;
@@ -19,11 +20,19 @@ body[ytsp-active] #ytsp-app {
   display: block;
 }
 
+/* Guard: bars are hidden when not on a watch page.
+   YouTube's SPA transitions can temporarily detach #ytsp-app,
+   breaking display:none inheritance on its fixed children. */
+body:not([ytsp-active]) #ytsp-tab-bar,
+body:not([ytsp-active]) #ytsp-resize-bar {
+  display: none !important;
+}
+
 /* ── Tab bar ────────────────────────────────────────────────── */
 #ytsp-tab-bar {
   position: fixed;
-  top: 56px;
-  height: 38px;
+  top: var(--ytsp-header-height, 56px);
+  height: var(--ytsp-tab-bar-height, 38px);
   display: flex;
   align-items: center;
   padding: 0 6px;
@@ -75,14 +84,13 @@ body[ytsp-active] #ytsp-app {
 /* ── Resize bar ─────────────────────────────────────────────── */
 #ytsp-resize-bar {
   position: fixed;
-  top: 56px;
+  top: var(--ytsp-header-height, 56px);
   bottom: 0;
   width: 14px;
   z-index: 99999;
   cursor: ew-resize;
   touch-action: none;
   pointer-events: auto;
-  margin-left: -7px; /* center the hit-target over the player edge */
   display: flex;
   align-items: stretch;
 }
@@ -143,17 +151,11 @@ body[ytsp-active] #panels::-webkit-scrollbar-track {
 }
 
 /* ── YCS panel container ─────────────────────────────────────── */
-/* When the ycs tab is active, ensure the YCS shadow root fills
-   the sidebar. The YCS extension (built with Plasmo) creates a
-   host element with id "plasmo-yck-root-sidebar" inside
-   #secondary-inner, and renders its React UI inside a shadow DOM.
-   These styles help it fill the sidebar panel area correctly. */
 body[ytsp-active] #secondary-inner > [id^="plasmo-yck-root-"] {
   position: relative;
   z-index: 1;
 }
 
-/* Ensure YCS shadow DOM content has proper scroll */
 body[ytsp-active] #secondary-inner > [id^="plasmo-yck-root-"]::-webkit-scrollbar {
   width: 5px;
 }

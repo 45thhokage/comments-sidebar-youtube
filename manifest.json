@@ -10,7 +10,15 @@
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/*"],
-      "js": ["content.js"],
+      "js": [
+        "content/core.js",
+        "content/panels.js",
+        "content/tabs.js",
+        "content/layout.js",
+        "content/navigation.js",
+        "content/drag.js",
+        "content/index.js"
+      ],
       "css": ["content.css"],
       "run_at": "document_end"
     },
