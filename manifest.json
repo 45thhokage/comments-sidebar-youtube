@@ -17,6 +17,7 @@
         "content/layout.js",
         "content/navigation.js",
         "content/drag.js",
+        "content/notification-ontop.js",
         "content/index.js"
       ],
       "css": ["content.css"],
