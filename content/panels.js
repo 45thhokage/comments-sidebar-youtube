@@ -59,15 +59,20 @@
 
   YTSP.isAskPanel = function (element) {
     if (!element) return false;
+    // Prefer structural signal over loose id substrings (bare "ai" matched
+    // unrelated tokens like "available", "campaign", etc.).
+    if (element.querySelector("ytd-conversation-section-renderer, ytd-ask-promo-renderer")) {
+      return true;
+    }
     var text = readAskPanelId(element);
     return text.includes("ask") ||
            text.includes("conversation") ||
-           text.includes("ai") ||
            text.includes("qna") ||
-           text.includes("summary") ||
-           text.includes("summarize") ||
            text.includes("payouchat") ||
-           !!element.querySelector("ytd-conversation-section-renderer, ytd-ask-promo-renderer");
+           // Delimiter-aware whole-token match for "ai" only (not substring of other words)
+           /(^|[-_:.])ai($|[-_:.])/.test(text) ||
+           text.includes("summary") ||
+           text.includes("summarize");
   };
 
   YTSP.findAskButton = function () {

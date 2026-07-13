@@ -44,7 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const url = new URL(tab.url);
         const isYouTube = url.hostname === "www.youtube.com" || url.hostname === "youtube.com";
-        const isWatch = isYouTube && (url.pathname === "/watch" || url.pathname.startsWith("/watch"));
+        const isWatch = isYouTube && (url.pathname === "/watch" || url.pathname === "/watch/");
         if (!prefs.enabled) {
           setStatus("off", isWatch ? "Disabled on this page" : "Extension disabled");
         } else if (isWatch) {

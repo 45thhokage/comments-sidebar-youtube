@@ -50,6 +50,15 @@
    * where YouTube hasn't finished rendering the below section yet.
    * On deactivate: tears down layout and stops the DOM observer.
    */
+  /** Exact watch-page paths only — do not match /watchlist or other /watch… routes. */
+  function isWatchPathname(pathname) {
+    return pathname === "/watch" || pathname === "/watch/";
+  }
+
+  /** Monotonic generation so stale async restores cannot finish after a newer activation. */
+  var activateGeneration = 0;
+  var activateTimer = null;
+
   function activateWatchLayout() {
     if (!state.isOnWatchPage) return;
     if (typeof YTSP.isExtensionEnabled === "function" && !YTSP.isExtensionEnabled()) {
@@ -63,8 +72,24 @@
     var videoChanged = videoId && videoId !== state.lastVideoId;
     if (videoId) state.lastVideoId = videoId;
 
+    if (activateTimer !== null) {
+      clearTimeout(activateTimer);
+      activateTimer = null;
+    }
+    var generation = ++activateGeneration;
+    var expectedId = videoId;
+
+    function stillCurrent() {
+      if (!state.isOnWatchPage) return false;
+      if (generation !== activateGeneration) return false;
+      if (expectedId && typeof YTSP.getVideoId === "function" && YTSP.getVideoId() !== expectedId) {
+        return false;
+      }
+      return true;
+    }
+
     function finishActivate() {
-      if (!state.isOnWatchPage) return;
+      if (!stillCurrent()) return;
       YTSP.applyLayout({ animate: !!videoChanged });
       startDomObserver();
       if (state.activeTab === "description") setTimeout(YTSP.autoExpandDescription, 600);
@@ -74,8 +99,16 @@
       // Wait briefly for channel metadata when memory mode is channel
       var mode = YTSP.prefsState && YTSP.prefsState.memoryMode;
       var delay = mode === "channel" ? 400 : 0;
-      setTimeout(function () {
-        YTSP.restoreMemoryForCurrentVideo().then(finishActivate).catch(finishActivate);
+      activateTimer = setTimeout(function () {
+        activateTimer = null;
+        if (!stillCurrent()) return;
+        YTSP.restoreMemoryForCurrentVideo().then(function () {
+          if (!stillCurrent()) return;
+          finishActivate();
+        }).catch(function () {
+          if (!stillCurrent()) return;
+          finishActivate();
+        });
       }, delay);
     } else {
       finishActivate();
@@ -83,7 +116,7 @@
   }
 
   function checkWatchPage() {
-    var onWatch = location.pathname === "/watch" || location.pathname.indexOf("/watch") === 0;
+    var onWatch = isWatchPathname(location.pathname);
 
     if (onWatch && !state.isOnWatchPage) {
       state.isOnWatchPage = true;
@@ -105,6 +138,11 @@
     } else if (!onWatch && state.isOnWatchPage) {
       state.isOnWatchPage = false;
       state.lastVideoId = null;
+      if (activateTimer !== null) {
+        clearTimeout(activateTimer);
+        activateTimer = null;
+      }
+      activateGeneration++;
       YTSP.removeLayout();
       stopDomObserver();
     }
@@ -155,8 +193,7 @@
       clearTimeout(timer);
       timer = setTimeout(function () {
         timer = null;
-        var onWatch = location.pathname === "/watch" ||
-                      location.pathname.indexOf("/watch") === 0;
+        var onWatch = isWatchPathname(location.pathname);
 
         if (onWatch && !state.isOnWatchPage) {
           state.isOnWatchPage = true;

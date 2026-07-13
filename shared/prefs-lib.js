@@ -14,6 +14,8 @@
   var PREFS_KEY = "ytspPrefs";
   var MEMORY_KEY = "ytspMemory";
   var MSG_PREFS_CHANGED = "ytsp-prefs-changed";
+  /** Cap video/channel memory maps (keep in sync with content/prefs.js). */
+  var MEMORY_MAX_ENTRIES = 80;
 
   var DEFAULT_WIDTH = 0.55;
   var DEFAULT_MIN_SIDEBAR = 280;
@@ -346,6 +348,35 @@
     return null;
   }
 
+  function pruneMap(map, max) {
+    var keys = Object.keys(map);
+    if (keys.length <= max) return map;
+    keys.sort(function (a, b) {
+      return (map[a].updatedAt || 0) - (map[b].updatedAt || 0);
+    });
+    var drop = keys.length - max;
+    for (var i = 0; i < drop; i++) delete map[keys[i]];
+    return map;
+  }
+
+  /** Drop oldest non-manual channels first when over the cap. */
+  function pruneChannelsPreferManual(map, max) {
+    var keys = Object.keys(map);
+    if (keys.length <= max) return map;
+    keys.sort(function (a, b) {
+      var am = map[a].addedManually || map[a].manual ? 1 : 0;
+      var bm = map[b].addedManually || map[b].manual ? 1 : 0;
+      if (am !== bm) return am - bm;
+      return (map[a].updatedAt || 0) - (map[b].updatedAt || 0);
+    });
+    var drop = keys.length - max;
+    for (var i = 0; i < drop; i++) {
+      if ((map[keys[i]].addedManually || map[keys[i]].manual) && keys.length - i <= max) break;
+      delete map[keys[i]];
+    }
+    return map;
+  }
+
   function normalizeMemory(raw) {
     if (!raw || typeof raw !== "object") return emptyMemory();
     var channels = raw.channels && typeof raw.channels === "object" ? raw.channels : {};
@@ -357,9 +388,10 @@
       if (!Array.isArray(e.aliases)) e.aliases = [];
     });
     channels = consolidateChannels(channels, null);
+    var videos = raw.videos && typeof raw.videos === "object" ? raw.videos : {};
     return {
-      videos: raw.videos && typeof raw.videos === "object" ? raw.videos : {},
-      channels: channels,
+      videos: pruneMap(videos, MEMORY_MAX_ENTRIES),
+      channels: pruneChannelsPreferManual(channels, MEMORY_MAX_ENTRIES),
       defaultProfile: raw.defaultProfile && typeof raw.defaultProfile === "object"
         ? raw.defaultProfile
         : null,
@@ -375,6 +407,11 @@
   function saveMemory(store) {
     var normalized = normalizeMemory(store);
     normalized.channels = consolidateChannels(normalized.channels, null);
+    normalized.channels = pruneChannelsPreferManual(normalized.channels, MEMORY_MAX_ENTRIES);
+    normalized.videos = pruneMap(
+      normalized.videos && typeof normalized.videos === "object" ? normalized.videos : {},
+      MEMORY_MAX_ENTRIES
+    );
     var payload = {};
     payload[MEMORY_KEY] = normalized;
     return storageSet(payload).then(function (ok) {

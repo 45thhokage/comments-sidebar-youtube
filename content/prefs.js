@@ -700,6 +700,7 @@
             updatedAt: Date.now(),
           };
         }
+        store.channels = pruneChannelsPreferManual(store.channels, MEMORY_MAX_ENTRIES);
       }
       var payload = {};
       payload[MEMORY_KEY] = store;
@@ -722,6 +723,7 @@
         if (channelIds.length) {
           var before = JSON.stringify(Object.keys(store.channels).sort());
           store.channels = consolidateChannels(store.channels, channelIds);
+          store.channels = pruneChannelsPreferManual(store.channels, MEMORY_MAX_ENTRIES);
           var after = JSON.stringify(Object.keys(store.channels).sort());
           if (before !== after) {
             var payload = {};

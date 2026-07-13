@@ -341,6 +341,10 @@
     document.body.classList.remove("ytsp-animate-layout");
     if (dom.style) dom.style.textContent = "";
 
+    // Clear inline top set by applyLayout so the native player layout is not offset.
+    var playerElement = document.querySelector("#player.ytd-watch-flexy");
+    if (playerElement) playerElement.style.top = "";
+
     var below = document.querySelector("#below.ytd-watch-flexy");
     if (below) Array.from(below.children).forEach(function (child) { child.style.display = ""; });
 

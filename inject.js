@@ -87,46 +87,93 @@
   }
 
   // ── Polling helper: wait for ytd-watch-flexy, then call fn ────
+  // Single shared poll so SPA re-patch events do not stack intervals.
+  var flexyPollInterval = null;
+  var flexyPollTimeout = null;
+
+  function clearFlexyPoll() {
+    if (flexyPollInterval !== null) {
+      clearInterval(flexyPollInterval);
+      flexyPollInterval = null;
+    }
+    if (flexyPollTimeout !== null) {
+      clearTimeout(flexyPollTimeout);
+      flexyPollTimeout = null;
+    }
+  }
+
+  function markPatched(flexy, prop) {
+    try {
+      Object.defineProperty(flexy, prop, { value: true, configurable: true });
+    } catch (_) {
+      flexy[prop] = true;
+    }
+  }
+
   function onFlexyReady(fn) {
-    var interval = setInterval(function () {
+    clearFlexyPoll();
+
+    var existing = document.querySelector("ytd-watch-flexy");
+    if (existing) {
+      if (typeof fn === "function") fn(existing);
+      return;
+    }
+
+    flexyPollInterval = setInterval(function () {
       var flexy = document.querySelector("ytd-watch-flexy");
       if (!flexy) return;
+      clearFlexyPoll();
       if (typeof fn === "function") fn(flexy);
-      clearInterval(interval);
     }, 500);
-    setTimeout(function () { clearInterval(interval); }, 30000);
+    flexyPollTimeout = setTimeout(function () {
+      clearFlexyPoll();
+    }, 30000);
   }
 
   // ── Patch computeLayout_ on ytd-watch-flexy ───────────────────
   function patchComputeLayout(flexy) {
     if (typeof flexy.computeLayout_ !== "function") return;
+    if (flexy.__ytspComputeLayoutPatched) return;
     var orig = flexy.computeLayout_.bind(flexy);
     flexy.computeLayout_ = function () {
       if (isYTSPActive()) return;
       return orig();
     };
+    markPatched(flexy, "__ytspComputeLayoutPatched");
   }
 
   // ── Patch isTwoColumns_ to always return true ─────────────────
   function patchIsTwoColumns(flexy) {
     if (typeof flexy.isTwoColumns_ !== "function") return;
+    if (flexy.__ytspIsTwoColumnsPatched) return;
     var orig = flexy.isTwoColumns_.bind(flexy);
     flexy.isTwoColumns_ = function () {
       if (isYTSPActive()) return true;
       return orig();
     };
+    markPatched(flexy, "__ytspIsTwoColumnsPatched");
   }
 
   // ── Apply all element-level patches ───────────────────────────
+  // Per-method guards allow retry if methods are not on the element yet.
   function patchElementMethods(flexy) {
+    if (!flexy) return;
     patchComputeLayout(flexy);
     patchIsTwoColumns(flexy);
   }
 
   // ── Re-patch on SPA navigation ────────────────────────────────
   function setupNavigationRepatch() {
+    var rePatchTimer = null;
     function rePatch() {
-      setTimeout(function () {
+      // Clear any in-flight poll / scheduled re-patch before starting another.
+      clearFlexyPoll();
+      if (rePatchTimer !== null) {
+        clearTimeout(rePatchTimer);
+        rePatchTimer = null;
+      }
+      rePatchTimer = setTimeout(function () {
+        rePatchTimer = null;
         onFlexyReady(patchElementMethods);
       }, 1000);
     }
