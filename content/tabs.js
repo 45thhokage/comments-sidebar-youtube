@@ -67,6 +67,74 @@
 
   YTSP.tabConfig = tabConfig;
 
+  var TAB_SCROLL_STEP = 160;
+
+  /**
+   * Horizontal scroll polish for the tab bar:
+   * - wheel (vertical) → horizontal scroll while hovering tabs
+   * - absolute edge arrows (left arrow scrolls content rightward / scrollLeft--, etc.)
+   * - arrow visibility tracks whether more content exists on each side
+   */
+  YTSP.setupTabBarScroll = function () {
+    var tabBar = dom.tabBar;
+    var scrollEl = dom.tabScroll;
+    var navLeft = dom.tabNavLeft;
+    var navRight = dom.tabNavRight;
+    if (!tabBar || !scrollEl || !navLeft || !navRight) return;
+
+    function updateNavVisibility() {
+      var maxScroll = scrollEl.scrollWidth - scrollEl.clientWidth;
+      var canScroll = maxScroll > 1;
+      var atStart = scrollEl.scrollLeft <= 1;
+      var atEnd = scrollEl.scrollLeft >= maxScroll - 1;
+
+      tabBar.classList.toggle("ytsp-can-scroll-left", canScroll && !atStart);
+      tabBar.classList.toggle("ytsp-can-scroll-right", canScroll && !atEnd);
+    }
+
+    function scrollBy(delta) {
+      scrollEl.scrollBy({ left: delta, behavior: "smooth" });
+    }
+
+    // Vertical mouse wheel → horizontal scroll (premium trackpad-friendly tabs)
+    scrollEl.addEventListener("wheel", function (event) {
+      if (scrollEl.scrollWidth <= scrollEl.clientWidth + 1) return;
+      // Prefer vertical delta; fall back to horizontal if already horizontal
+      var delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX)
+        ? event.deltaY
+        : event.deltaX;
+      if (!delta) return;
+      event.preventDefault();
+      scrollEl.scrollLeft += delta;
+      updateNavVisibility();
+    }, { passive: false });
+
+    // Left edge button: content shifts right (scrollLeft decreases)
+    navLeft.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      scrollBy(-TAB_SCROLL_STEP);
+    });
+
+    // Right edge button: content shifts left (scrollLeft increases)
+    navRight.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      scrollBy(TAB_SCROLL_STEP);
+    });
+
+    scrollEl.addEventListener("scroll", updateNavVisibility, { passive: true });
+
+    if (typeof ResizeObserver !== "undefined") {
+      var ro = new ResizeObserver(updateNavVisibility);
+      ro.observe(scrollEl);
+      ro.observe(tabBar);
+    }
+
+    YTSP.updateTabBarScroll = updateNavVisibility;
+    updateNavVisibility();
+  };
+
   function showPanel(element) {
     element.style.display = "flex";
     element.style.flexDirection = "column";
@@ -88,8 +156,12 @@
     element.removeAttribute("data-ytsp-visible");
   }
 
-  YTSP.switchTab = function (tab) {
-    if (tab === state.activeTab) return;
+  YTSP.switchTab = function (tab, options) {
+    options = options || {};
+    if (typeof YTSP.isTabVisible === "function" && !YTSP.isTabVisible(tab)) {
+      if (!options.force) return;
+    }
+    if (tab === state.activeTab && !options.force) return;
     if (dom.tabBtns[state.activeTab]) dom.tabBtns[state.activeTab].classList.remove("active");
     state.activeTab = tab;
     if (dom.tabBtns[tab]) dom.tabBtns[tab].classList.add("active");
@@ -105,6 +177,10 @@
     if (typeof YTSP.applyLayout === "function") YTSP.applyLayout();
 
     if (tab === "description") setTimeout(YTSP.autoExpandDescription, 250);
+
+    if (!options.skipMemory && typeof YTSP.rememberCurrentLayout === "function") {
+      YTSP.rememberCurrentLayout();
+    }
   };
 
   YTSP.applyTabVisibility = function () {

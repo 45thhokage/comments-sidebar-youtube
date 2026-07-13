@@ -8,7 +8,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      width: 240px;
+      width: 300px;
       background: #0f0f0f;
       color: #e3e3e3;
       font-family: "Roboto", "Arial", sans-serif;
@@ -34,9 +34,7 @@
       flex-shrink: 0;
     }
 
-    .header-icon svg {
-      display: block;
-    }
+    .header-icon svg { display: block; }
 
     .header-title {
       font-weight: 600;
@@ -55,10 +53,6 @@
       border-bottom: 1px solid #1a1a1a;
     }
 
-    .section:last-child {
-      border-bottom: none;
-    }
-
     .section-label {
       font-size: 10px;
       font-weight: 600;
@@ -68,10 +62,16 @@
       margin-bottom: 8px;
     }
 
-    .status-row {
+    .section-label-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .section-label-row .section-label {
+      margin-bottom: 0;
     }
 
     .status-text {
@@ -94,48 +94,297 @@
       box-shadow: 0 0 4px #3ea60066;
     }
 
-    .info-text {
+    .dot.off {
+      background: #c0392b;
+      box-shadow: 0 0 4px #c0392b66;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .row-label {
+      font-size: 12px;
+      color: #ddd;
+    }
+
+    .helper {
       font-size: 11px;
       color: #666;
-      line-height: 1.5;
+      line-height: 1.45;
+      margin-top: 8px;
     }
 
-    a {
-      color: #3ea6ff;
-      text-decoration: none;
+    .storage-line {
+      margin-top: 8px;
+      font-size: 10px;
+      color: #666;
+      line-height: 1.35;
     }
 
-    a:hover {
-      text-decoration: underline;
+    .storage-line strong {
+      color: #999;
+      font-weight: 600;
     }
 
-    .tabs-list {
+    /* Storage mode segmented control */
+    .mode-toggle {
       display: flex;
-      flex-wrap: wrap;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .mode-toggle button {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: #888;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 8px 6px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .mode-toggle button:hover { color: #ccc; }
+
+    .mode-toggle button.active {
+      background: #ff2d7a;
+      color: #fff;
+    }
+
+    /* Tab preference rows */
+    .tab-prefs {
+      display: flex;
+      flex-direction: column;
       gap: 4px;
     }
 
-    .tab-chip {
-      padding: 3px 8px;
-      border-radius: 20px;
-      font-size: 10px;
-      font-weight: 500;
+    .tab-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 6px;
+      border-radius: 8px;
+      background: #141414;
+      border: 1px solid #222;
+    }
+
+    .tab-row.hidden-tab { opacity: 0.55; }
+
+    .tab-name {
+      flex: 1;
+      font-size: 12px;
+      color: #ddd;
+      text-transform: lowercase;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tab-row.hidden-tab .tab-name {
+      color: #777;
+      text-decoration: line-through;
+    }
+
+    .order-btns {
+      display: flex;
+      gap: 2px;
+    }
+
+    .order-btns button {
+      width: 24px;
+      height: 22px;
+      border: 1px solid #333;
+      border-radius: 5px;
       background: #1e1e1e;
       color: #aaa;
+      font-size: 11px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .order-btns button:hover:not(:disabled) {
+      border-color: #555;
+      color: #fff;
+      background: #2a2a2a;
+    }
+
+    .order-btns button:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    /* Toggle switch */
+    .switch {
+      position: relative;
+      width: 32px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .switch.lg {
+      width: 36px;
+      height: 20px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .switch .slider {
+      position: absolute;
+      inset: 0;
+      background: #333;
+      border-radius: 18px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .switch .slider::before {
+      content: "";
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      left: 3px;
+      top: 3px;
+      background: #aaa;
+      border-radius: 50%;
+      transition: transform 0.15s, background 0.15s;
+    }
+
+    .switch.lg .slider::before {
+      width: 14px;
+      height: 14px;
+    }
+
+    .switch input:checked + .slider { background: #ff2d7a55; }
+
+    .switch input:checked + .slider::before {
+      transform: translateX(14px);
+      background: #ff2d7a;
+    }
+
+    .switch.lg input:checked + .slider::before {
+      transform: translateX(16px);
+    }
+
+    .switch input:disabled + .slider {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Footer: hint left, actions right */
+    .footer {
+      padding: 10px 12px 12px 16px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 10px;
+      border-top: 1px solid #1a1a1a;
+    }
+
+    .footer-hint {
+      flex: 1;
+      min-width: 0;
+      font-size: 10px;
+      color: #555;
+      line-height: 1.4;
+    }
+
+    .footer-hint kbd {
+      font-family: inherit;
+      font-size: 10px;
+      color: #777;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 3px;
+      padding: 0 4px;
+    }
+
+    .footer-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .btn-sm {
       border: 1px solid #333;
+      background: #1a1a1a;
+      color: #aaa;
+      font-family: inherit;
+      font-size: 10px;
+      font-weight: 500;
+      padding: 5px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      line-height: 1.2;
+      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
     }
 
-    .tab-chip.featured {
-      background: #ff2d7a22;
-      color: #ff2d7a;
+    .btn-sm:hover {
+      background: #242424;
+      border-color: #444;
+      color: #fff;
+    }
+
+    .btn-sm.reset {
+      color: #ff8ab8;
       border-color: #ff2d7a44;
+      background: #ff2d7a14;
     }
 
-    .tab-chip.ycs {
-      background: #3ea6ff22;
-      color: #3ea6ff;
-      border-color: #3ea6ff44;
+    .btn-sm.reset:hover {
+      background: #ff2d7a28;
+      border-color: #ff2d7a77;
+      color: #fff;
     }
+
+    .btn-icon {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #888;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    .btn-icon:hover {
+      background: #242424;
+      border-color: #555;
+      color: #fff;
+    }
+
+    .btn-icon svg {
+      display: block;
+    }
+
+    .toast {
+      display: none;
+      padding: 0 16px 8px;
+      font-size: 11px;
+      color: #3ea6ff;
+    }
+
+    .toast.show { display: block; }
   </style>
 </head>
 <body>
@@ -147,44 +396,71 @@
       </svg>
     </div>
     <div>
-      <div class="header-title">YouTube Side Panel</div>
+      <div class="header-title">YouTube Side Panel <span style="font-weight:500;color:#666;font-size:12px;">v16</span></div>
       <div class="header-subtitle">SPA-aware sidebar for YouTube</div>
     </div>
   </div>
 
   <div class="section">
     <div class="section-label">Status</div>
-    <div class="status-row">
-      <span class="status-text" id="status-text">
-        <span class="dot" id="status-dot"></span>
-        <span id="status-label">Checking…</span>
-      </span>
+    <span class="status-text">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-label">Checking…</span>
+    </span>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Side panel</div>
+    <div class="row">
+      <span class="row-label">Enabled</span>
+      <label class="switch lg" title="Turn the side panel layout on or off">
+        <input type="checkbox" id="enabled-toggle" checked />
+        <span class="slider"></span>
+      </label>
     </div>
   </div>
 
   <div class="section">
-    <div class="section-label">Tabs</div>
-    <div class="tabs-list">
-      <span class="tab-chip">description</span>
-      <span class="tab-chip featured">comments</span>
-      <span class="tab-chip ycs">ycs</span>
-      <span class="tab-chip">chapters</span>
-      <span class="tab-chip">ask</span>
-      <span class="tab-chip">related</span>
-      <span class="tab-chip">playlist</span>
-      <span class="tab-chip">chat</span>
+    <div class="section-label">Remember preferences</div>
+    <div class="mode-toggle" id="mode-toggle">
+      <button type="button" data-mode="session" id="mode-session">This session</button>
+      <button type="button" data-mode="permanent" id="mode-permanent">Permanently</button>
     </div>
+    <p class="helper" id="mode-helper">
+      Session prefs reset when the browser closes. Permanent prefs survive restarts.
+    </p>
+    <p class="storage-line" id="prefs-storage-line" title="Storage used by preferences">
+      Storage: <strong id="prefs-storage-size">…</strong>
+    </p>
   </div>
 
   <div class="section">
-    <div class="info-text">
-      The extension activates on every YouTube page and listens for navigation.
-      Click any video and the sidebar appears automatically — no page reload needed.
-      Drag the red grab bar on the left edge of the panel to reposition it.
-      The <b>ycs</b> tab hosts the YouTube Comment Search extension for searching through comments.
+    <div class="section-label-row">
+      <div class="section-label">Tabs</div>
+    </div>
+    <div class="tab-prefs" id="tab-prefs"></div>
+    <p class="helper">Reorder with the arrows. Toggle to show or hide a tab.</p>
+  </div>
+
+  <p class="toast" id="toast"></p>
+
+  <div class="footer">
+    <div class="footer-hint">
+      Hold <kbd>Shift</kbd> while dragging the split bar to snap (30%–100%).
+      Double-click the bar to reset to 55%.
+    </div>
+    <div class="footer-actions">
+      <button type="button" class="btn-sm reset" id="btn-reset" title="Reset tab order, visibility, and width to 55%">Reset</button>
+      <button type="button" class="btn-icon" id="btn-options" title="Open full settings page" aria-label="Open extension page">
+        <!-- wrench -->
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+        </svg>
+      </button>
     </div>
   </div>
 
+  <script src="shared/prefs-lib.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

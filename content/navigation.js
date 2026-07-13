@@ -10,6 +10,7 @@
   var YTSP = window.YTSP;
   var constants = YTSP.constants;
   var state = YTSP.state;
+  var dom = YTSP.dom;
 
   function onNav() {
     setTimeout(checkWatchPage, constants.NAV_DEBOUNCE_MS);
@@ -20,6 +21,7 @@
 
     YTSP.observers.dom = new MutationObserver(function () {
       if (!state.isOnWatchPage || state.isFullscreen) return;
+      if (typeof YTSP.isExtensionEnabled === "function" && !YTSP.isExtensionEnabled()) return;
       clearTimeout(YTSP.observers.dom._timer);
       YTSP.observers.dom._timer = setTimeout(function () {
         if (state.isOnWatchPage && !state.isFullscreen) YTSP.applyLayout();
@@ -48,11 +50,44 @@
    * where YouTube hasn't finished rendering the below section yet.
    * On deactivate: tears down layout and stops the DOM observer.
    */
+  function activateWatchLayout() {
+    if (!state.isOnWatchPage) return;
+    if (typeof YTSP.isExtensionEnabled === "function" && !YTSP.isExtensionEnabled()) {
+      YTSP.removeLayout();
+      if (dom && dom.tabBar) dom.tabBar.style.display = "none";
+      if (dom && dom.resizeBar) dom.resizeBar.style.display = "none";
+      return;
+    }
+
+    var videoId = typeof YTSP.getVideoId === "function" ? YTSP.getVideoId() : null;
+    var videoChanged = videoId && videoId !== state.lastVideoId;
+    if (videoId) state.lastVideoId = videoId;
+
+    function finishActivate() {
+      if (!state.isOnWatchPage) return;
+      YTSP.applyLayout({ animate: !!videoChanged });
+      startDomObserver();
+      if (state.activeTab === "description") setTimeout(YTSP.autoExpandDescription, 600);
+    }
+
+    if (videoChanged && typeof YTSP.restoreMemoryForCurrentVideo === "function") {
+      // Wait briefly for channel metadata when memory mode is channel
+      var mode = YTSP.prefsState && YTSP.prefsState.memoryMode;
+      var delay = mode === "channel" ? 400 : 0;
+      setTimeout(function () {
+        YTSP.restoreMemoryForCurrentVideo().then(finishActivate).catch(finishActivate);
+      }, delay);
+    } else {
+      finishActivate();
+    }
+  }
+
   function checkWatchPage() {
     var onWatch = location.pathname === "/watch" || location.pathname.indexOf("/watch") === 0;
 
     if (onWatch && !state.isOnWatchPage) {
       state.isOnWatchPage = true;
+      state.lastVideoId = null;
       YTSP.waitForElement(function () { return document.querySelector("ytd-watch-flexy"); }, 10000)
         .then(function (watchFlexy) {
           if (!watchFlexy || !state.isOnWatchPage) return;
@@ -62,12 +97,14 @@
         })
         .then(function (belowElement) {
           if (!belowElement || !state.isOnWatchPage) return;
-          YTSP.applyLayout();
-          startDomObserver();
-          if (state.activeTab === "description") setTimeout(YTSP.autoExpandDescription, 600);
+          activateWatchLayout();
         });
+    } else if (onWatch && state.isOnWatchPage) {
+      // SPA video → video while staying on /watch
+      activateWatchLayout();
     } else if (!onWatch && state.isOnWatchPage) {
       state.isOnWatchPage = false;
+      state.lastVideoId = null;
       YTSP.removeLayout();
       stopDomObserver();
     }
@@ -123,16 +160,18 @@
 
         if (onWatch && !state.isOnWatchPage) {
           state.isOnWatchPage = true;
+          state.lastVideoId = null;
           YTSP.waitForElement(function () {
             return document.querySelector("#below.ytd-watch-flexy, #below");
           }, 8000).then(function (belowElement) {
             if (!belowElement || !state.isOnWatchPage) return;
-            YTSP.applyLayout();
-            startDomObserver();
-            if (state.activeTab === "description") setTimeout(YTSP.autoExpandDescription, 600);
+            activateWatchLayout();
           });
+        } else if (onWatch && state.isOnWatchPage) {
+          activateWatchLayout();
         } else if (!onWatch && state.isOnWatchPage) {
           state.isOnWatchPage = false;
+          state.lastVideoId = null;
           YTSP.removeLayout();
           stopDomObserver();
         }
@@ -154,7 +193,10 @@
         if (state.isFullscreen) {
           YTSP.removeLayout();
         } else if (state.isOnWatchPage) {
-          setTimeout(function () { YTSP.applyLayout(); }, 300);
+          setTimeout(function () {
+            if (typeof YTSP.isExtensionEnabled === "function" && !YTSP.isExtensionEnabled()) return;
+            YTSP.applyLayout();
+          }, 300);
         }
       }
     });
@@ -162,7 +204,9 @@
 
   YTSP.listenForWindowResize = function () {
     window.addEventListener("resize", function () {
-      if (state.isOnWatchPage) YTSP.applyLayout();
+      if (!state.isOnWatchPage) return;
+      if (typeof YTSP.isExtensionEnabled === "function" && !YTSP.isExtensionEnabled()) return;
+      YTSP.applyLayout();
     });
   };
 

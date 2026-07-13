@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YouTube Side Panel — Settings</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #0f0f0f;
+      color: #e3e3e3;
+      font-family: "Roboto", "Arial", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .wrap {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid #272727;
+    }
+
+    .logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: #ff2d7a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    .card {
+      background: #141414;
+      border: 1px solid #242424;
+      border-radius: 12px;
+      padding: 18px 18px 16px;
+      margin-bottom: 14px;
+    }
+
+    .card h2 {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #666;
+      margin-bottom: 12px;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 6px 0;
+    }
+
+    .row + .row { border-top: 1px solid #1e1e1e; margin-top: 6px; padding-top: 12px; }
+
+    .row-text { min-width: 0; }
+    .row-title { font-size: 13px; color: #eee; font-weight: 500; }
+    .row-desc { font-size: 12px; color: #777; margin-top: 3px; }
+
+    .helper {
+      font-size: 12px;
+      color: #666;
+      margin-top: 10px;
+    }
+
+    .mode-toggle {
+      display: flex;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .mode-toggle button {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: #888;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 9px 8px;
+      cursor: pointer;
+    }
+
+    .mode-toggle button.active {
+      background: #ff2d7a;
+      color: #fff;
+    }
+
+    .mode-toggle.three button { font-size: 11px; padding: 9px 4px; }
+
+    select, input[type="number"], input[type="text"] {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: #eee;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-family: inherit;
+      font-size: 13px;
+    }
+
+    input[type="number"] { width: 88px; }
+
+    input[type="text"] {
+      width: 100%;
+      min-width: 0;
+    }
+
+    input[type="text"]::placeholder {
+      color: #555;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .card-head h2 {
+      margin-bottom: 0;
+    }
+
+    .storage-badge {
+      flex-shrink: 0;
+      font-size: 11px;
+      font-weight: 500;
+      color: #888;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 999px;
+      padding: 4px 10px;
+      white-space: nowrap;
+      line-height: 1.3;
+    }
+
+    .storage-badge strong {
+      color: #ccc;
+      font-weight: 600;
+    }
+
+    .storage-badge .quota {
+      color: #555;
+      font-weight: 400;
+    }
+
+    .add-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .add-row input[type="text"] {
+      flex: 1;
+    }
+
+    .add-row .btn {
+      flex-shrink: 0;
+      padding: 8px 12px;
+    }
+
+    .memory-list {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .memory-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+    }
+
+    .memory-item-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .memory-item-title {
+      font-size: 12px;
+      color: #ddd;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .memory-item-meta {
+      font-size: 11px;
+      color: #666;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .memory-item .btn-x {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: #222;
+      color: #888;
+      font-size: 14px;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .memory-item .btn-x:hover {
+      border-color: #555;
+      color: #fff;
+      background: #2a2a2a;
+    }
+
+    .memory-empty {
+      font-size: 12px;
+      color: #555;
+      padding: 8px 0 0;
+    }
+
+    .counts {
+      font-size: 11px;
+      color: #666;
+      margin-top: 8px;
+    }
+
+    .switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .switch .slider {
+      position: absolute;
+      inset: 0;
+      background: #333;
+      border-radius: 22px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .switch .slider::before {
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 3px;
+      top: 3px;
+      background: #aaa;
+      border-radius: 50%;
+      transition: transform 0.15s, background 0.15s;
+    }
+
+    .switch input:checked + .slider { background: #ff2d7a55; }
+    .switch input:checked + .slider::before {
+      transform: translateX(18px);
+      background: #ff2d7a;
+    }
+
+    .switch input:disabled + .slider { opacity: 0.4; cursor: not-allowed; }
+
+    .tab-prefs {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .tab-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+    }
+
+    .tab-row.hidden-tab { opacity: 0.55; }
+
+    .tab-name {
+      flex: 1;
+      font-size: 13px;
+      color: #ddd;
+      text-transform: lowercase;
+    }
+
+    .tab-row.hidden-tab .tab-name {
+      color: #777;
+      text-decoration: line-through;
+    }
+
+    .order-btns { display: flex; gap: 4px; }
+
+    .order-btns button {
+      width: 28px;
+      height: 26px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: #222;
+      color: #aaa;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .order-btns button:hover:not(:disabled) {
+      border-color: #555;
+      color: #fff;
+    }
+
+    .order-btns button:disabled { opacity: 0.35; cursor: default; }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .btn {
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #ddd;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      background: #242424;
+      border-color: #444;
+      color: #fff;
+    }
+
+    .btn.primary {
+      background: #ff2d7a22;
+      border-color: #ff2d7a55;
+      color: #ff8ab8;
+    }
+
+    .btn.primary:hover {
+      background: #ff2d7a33;
+      color: #fff;
+    }
+
+    .toast {
+      min-height: 18px;
+      margin-top: 12px;
+      font-size: 12px;
+      color: #3ea6ff;
+    }
+
+    .tips {
+      font-size: 12px;
+      color: #666;
+      line-height: 1.55;
+    }
+
+    .tips li { margin-left: 18px; margin-bottom: 4px; }
+    .tips kbd {
+      font-family: inherit;
+      font-size: 11px;
+      color: #888;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 3px;
+      padding: 0 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">
+        <svg width="18" height="18" viewBox="0 0 14 14" fill="none">
+          <rect x="1" y="1" width="5" height="12" rx="1.5" fill="white" opacity="0.9"/>
+          <rect x="8" y="1" width="5" height="8" rx="1.5" fill="white" opacity="0.5"/>
+        </svg>
+      </div>
+      <div>
+        <h1>YouTube Side Panel <span style="font-weight:500;color:#666;font-size:14px;">v16</span></h1>
+        <div class="subtitle">Settings</div>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>Side panel</h2>
+      <div class="row">
+        <div class="row-text">
+          <div class="row-title">Enabled</div>
+          <div class="row-desc">Turn the dual-pane layout on or off without removing the extension.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="enabled-toggle" checked />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Remember preferences</h2>
+        <div class="storage-badge" id="prefs-storage" title="Storage used by preferences">
+          <strong id="prefs-storage-size">…</strong>
+          <span class="quota" id="prefs-storage-quota"></span>
+        </div>
+      </div>
+      <div class="mode-toggle" id="mode-toggle">
+        <button type="button" data-mode="session" id="mode-session">This session</button>
+        <button type="button" data-mode="permanent" id="mode-permanent">Permanently</button>
+      </div>
+      <p class="helper" id="mode-helper">Session prefs reset when the browser starts. Permanent prefs survive restarts.</p>
+      <div class="actions" style="margin-top: 12px;">
+        <button type="button" class="btn" id="btn-clear-prefs" title="Remove saved preferences (tabs, width, etc.) and restore defaults">
+          Clear preferences data
+        </button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Layout memory</h2>
+        <div class="storage-badge" id="memory-storage" title="Storage used by layout memory">
+          <strong id="memory-storage-size">…</strong>
+          <span class="quota" id="memory-storage-quota"></span>
+        </div>
+      </div>
+      <div class="mode-toggle three" id="memory-toggle">
+        <button type="button" data-memory="off" id="memory-off">Off</button>
+        <button type="button" data-memory="video" id="memory-video">Per video</button>
+        <button type="button" data-memory="channel" id="memory-channel">Per channel</button>
+      </div>
+      <p class="helper">
+        <b>Per channel:</b> only channels you add below get a saved layout. Everything else uses a shared default profile
+        (updated when you resize/switch tabs on unlisted channels). Channels are never auto-added from watch history.
+        Prefer pasting a <code style="color:#888">youtube.com/channel/UC…</code> URL.
+        Adding a channel also checks the <b>home</b> page, <b>About</b> description links, and <b>featured channels</b> only — each becomes its own saved layout row.
+      </p>
+
+      <div class="add-row">
+        <input type="text" id="channel-input" placeholder="Channel URL, UC… id, or @handle" autocomplete="off" />
+        <button type="button" class="btn primary" id="btn-add-channel">Add</button>
+      </div>
+      <p class="counts" id="memory-counts">0 channels · 0 videos saved</p>
+      <div class="memory-list" id="channel-list"></div>
+
+      <div class="actions" style="margin-top: 12px;">
+        <button type="button" class="btn" id="btn-clear-memory">Clear memory data</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Resize</h2>
+      <div class="row">
+        <div class="row-text">
+          <div class="row-title">Minimum sidebar width</div>
+          <div class="row-desc">Keeps the panel usable when the player is very wide (200–480px).</div>
+        </div>
+        <input type="number" id="min-sidebar" min="200" max="480" step="10" value="280" />
+      </div>
+      <div class="row">
+        <div class="row-text">
+          <div class="row-title">Smooth width animation</div>
+          <div class="row-desc">Animate snap, double-click reset, and memory restore (not free drag).</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="smooth-toggle" checked />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Tabs</h2>
+      <div class="tab-prefs" id="tab-prefs"></div>
+      <p class="helper">Reorder with the arrows. Toggle to show or hide a tab on the watch page.</p>
+    </section>
+
+    <section class="card">
+      <h2>Actions</h2>
+      <div class="actions">
+        <button type="button" class="btn primary" id="btn-reset">Reset layout defaults</button>
+      </div>
+      <p class="helper">Restores tab order, all tabs visible, and player width to 55%. Does not clear memory or change storage mode.</p>
+      <p class="toast" id="toast"></p>
+    </section>
+
+    <section class="card">
+      <h2>Tips</h2>
+      <ul class="tips">
+        <li>Hold <kbd>Shift</kbd> while dragging the split bar to snap (30%–100%, limited by min sidebar width).</li>
+        <li>Double-click the split bar to jump back to 55%.</li>
+        <li>Master enable is also available in the extension popup for quick access.</li>
+      </ul>
+    </section>
+  </div>
+
+  <script src="shared/prefs-lib.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

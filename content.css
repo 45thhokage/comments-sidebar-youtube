@@ -35,22 +35,106 @@ body:not([ytsp-active]) #ytsp-resize-bar {
   height: var(--ytsp-tab-bar-height, 38px);
   display: flex;
   align-items: center;
-  padding: 0 6px;
-  gap: 2px;
+  padding: 0;
   z-index: 99999;
   pointer-events: auto;
   background: var(--yt-spec-general-background-a, #0f0f0f);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   box-sizing: border-box;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow: hidden;
 }
 
-#ytsp-tab-bar::-webkit-scrollbar {
+/* Inner horizontal scroller for tab chips */
+#ytsp-tab-scroll {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 6px;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  pointer-events: auto;
+}
+
+#ytsp-tab-scroll::-webkit-scrollbar {
   display: none;
 }
 
-#ytsp-tab-bar button {
+/* Edge nav arrows — absolute overlays with fade masks */
+#ytsp-tab-bar .ytsp-tab-nav {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 28px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  pointer-events: none;
+  opacity: 0;
+  font-family: "Roboto", "Arial", sans-serif;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--yt-spec-text-primary, #fff);
+  transition: opacity 0.18s ease, color 0.15s ease, background 0.15s ease;
+  outline: none;
+  flex-shrink: 0;
+}
+
+#ytsp-tab-bar .ytsp-tab-nav-left {
+  left: 0;
+  background: linear-gradient(
+    to right,
+    var(--yt-spec-general-background-a, #0f0f0f) 55%,
+    transparent
+  );
+  padding-right: 4px;
+}
+
+#ytsp-tab-bar .ytsp-tab-nav-right {
+  right: 0;
+  background: linear-gradient(
+    to left,
+    var(--yt-spec-general-background-a, #0f0f0f) 55%,
+    transparent
+  );
+  padding-left: 4px;
+}
+
+#ytsp-tab-bar.ytsp-can-scroll-left .ytsp-tab-nav-left,
+#ytsp-tab-bar.ytsp-can-scroll-right .ytsp-tab-nav-right {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#ytsp-tab-bar .ytsp-tab-nav:hover {
+  color: #ff2d7a;
+}
+
+#ytsp-tab-bar .ytsp-tab-nav:active {
+  color: #ff5a9a;
+}
+
+/* When arrows are visible, give chips a little breathing room under the fade */
+#ytsp-tab-bar.ytsp-can-scroll-left #ytsp-tab-scroll {
+  padding-left: 22px;
+}
+
+#ytsp-tab-bar.ytsp-can-scroll-right #ytsp-tab-scroll {
+  padding-right: 22px;
+}
+
+#ytsp-tab-scroll button {
   font-family: "Roboto", "Arial", sans-serif;
   font-size: 11px;
   font-weight: 500;
@@ -70,12 +154,12 @@ body:not([ytsp-active]) #ytsp-resize-bar {
   line-height: 1.2;
 }
 
-#ytsp-tab-bar button:hover {
+#ytsp-tab-scroll button:hover {
   background: rgba(255, 255, 255, 0.08);
   color: var(--yt-spec-text-primary, #fff);
 }
 
-#ytsp-tab-bar button.active {
+#ytsp-tab-scroll button.active {
   background: #ff2d7a;
   color: #fff;
   font-weight: 600;
@@ -120,6 +204,27 @@ body:not([ytsp-active]) #ytsp-resize-bar {
   background: rgba(231, 76, 60, 0.06);
 }
 
+#ytsp-resize-bar.snapping > div {
+  background: #ff2d7a;
+  width: 3px;
+  box-shadow: 0 0 6px rgba(255, 45, 122, 0.45);
+}
+
+/* Smooth layout transitions (snap, reset, memory restore) — off while dragging */
+body[ytsp-active].ytsp-animate-layout #player.ytd-watch-flexy,
+body[ytsp-active].ytsp-animate-layout ytd-watch-flexy[theater] #player-theater-container,
+body[ytsp-active].ytsp-animate-layout #below.ytd-watch-flexy,
+body[ytsp-active].ytsp-animate-layout #secondary-inner.ytd-watch-flexy,
+body[ytsp-active].ytsp-animate-layout #panels.ytd-watch-flexy,
+body[ytsp-active].ytsp-animate-layout ytd-engagement-panel-section-list-renderer#panels {
+  transition: width 0.22s ease, left 0.22s ease, max-width 0.22s ease !important;
+}
+
+body[ytsp-active].ytsp-animate-layout #ytsp-tab-bar,
+body[ytsp-active].ytsp-animate-layout #ytsp-resize-bar {
+  transition: left 0.22s ease, width 0.22s ease !important;
+}
+
 /* ── Scrollbar polish for sidebar areas ─────────────────────── */
 body[ytsp-active] #below::-webkit-scrollbar,
 body[ytsp-active] #secondary-inner::-webkit-scrollbar {
@@ -144,7 +249,7 @@ body[ytsp-active] #panels::-webkit-scrollbar-track {
 }
 
 /* ── YCS tab button highlight ───────────────────────────────── */
-#ytsp-tab-bar button[data-tab="ycs"].active {
+#ytsp-tab-scroll button[data-tab="ycs"].active {
   background: #3ea6ff;
   color: #0f0f0f;
   font-weight: 600;

@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "YouTube Side Panel",
-  "version": "1.2.0",
+  "version": "16.0.0",
   "description": "Adds a draggable side panel to YouTube watch pages with tabs for description, comments, YCS (Comment Search), chapters, and more. Works across SPA navigations.",
-  "permissions": [],
+  "permissions": ["storage"],
   "host_permissions": [
     "https://www.youtube.com/*"
   ],
@@ -12,8 +12,10 @@
       "matches": ["https://www.youtube.com/*"],
       "js": [
         "content/core.js",
+        "content/prefs.js",
         "content/panels.js",
         "content/tabs.js",
+        "content/tab-bar.js",
         "content/layout.js",
         "content/navigation.js",
         "content/drag.js",
@@ -30,6 +32,10 @@
       "world": "MAIN"
     }
   ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

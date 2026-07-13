@@ -9,7 +9,6 @@
   "use strict";
 
   var YTSP = window.YTSP;
-  var constants = YTSP.constants;
   var state = YTSP.state;
   var dom = YTSP.dom;
 
@@ -19,18 +18,8 @@
     dom.app = document.createElement("div");
     dom.app.id = "ytsp-app";
 
-    dom.tabBar = document.createElement("div");
-    dom.tabBar.id = "ytsp-tab-bar";
-
-    constants.TABS.forEach(function (tab) {
-      var button = document.createElement("button");
-      button.textContent = tab;
-      button.dataset.tab = tab;
-      if (tab === state.activeTab) button.classList.add("active");
-      button.addEventListener("click", function () { YTSP.switchTab(tab); });
-      dom.tabBar.appendChild(button);
-      dom.tabBtns[tab] = button;
-    });
+    var tabBar = YTSP.createTabBar();
+    dom.app.appendChild(tabBar);
 
     dom.resizeBar = document.createElement("div");
     dom.resizeBar.id = "ytsp-resize-bar";
@@ -45,7 +34,6 @@
     dom.style = document.createElement("style");
     dom.style.id = "ytsp-dynamic-styles";
 
-    dom.app.appendChild(dom.tabBar);
     dom.app.appendChild(dom.resizeBar);
     document.head.appendChild(dom.style);
     document.body.appendChild(dom.app);
@@ -53,15 +41,30 @@
 
   function init() {
     YTSP.initCSSProperties();
-    YTSP.loadStoredWidth().then(function () {
+    YTSP.loadPrefs().then(function () {
       createUI();
+
+      // Ensure active tab is one of the visible ones after prefs load
+      var visible = YTSP.getVisibleTabs();
+      if (visible.length && visible.indexOf(state.activeTab) === -1) {
+        state.activeTab = visible[0];
+        if (dom.tabBtns[state.activeTab]) {
+          Object.keys(dom.tabBtns).forEach(function (key) {
+            dom.tabBtns[key].classList.toggle("active", key === state.activeTab);
+          });
+        }
+      }
+
+      // Ready before listeners so prefs messages can apply immediately
+      state.isUIReady = true;
+
+      YTSP.setupPrefsListener();
       YTSP.setupNavigationListener();
       YTSP.setupPagePresenceObserver();
       YTSP.setupNativeButtonInterceptors();
       YTSP.setupEngagementPanelObserver();
       YTSP.setupFullscreenListener();
       YTSP.listenForWindowResize();
-      state.isUIReady = true;
 
       YTSP.checkWatchPage();
     });
