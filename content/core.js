@@ -18,7 +18,7 @@
     SIDEBAR_PADDING: 8,
     /** Legacy sessionStorage key — migrated once by prefs.js */
     STORAGE_KEY: "ytSidePanelPlayerWidthPercent",
-    TABS: ["description", "comments", "ycs", "chapters", "ask", "related", "playlist", "chat"],
+    TABS: ["description", "comments", "ycs", "chapters", "transcript", "ask", "related", "playlist", "chat"],
     BELOW_TABS: new Set(["description", "comments"]),
     MIN_PLAYER_WIDTH: 320,
     MAX_PLAYER_WIDTH_FRAC: 1,

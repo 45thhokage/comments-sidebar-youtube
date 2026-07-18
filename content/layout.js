@@ -196,7 +196,12 @@
         }
       `;
 
-      if (tab === "chapters" || tab === "ask") {
+      if (tab === "chapters" || tab === "ask" || tab === "transcript") {
+        // Only the single panel marked data-ytsp-visible should fill the sidebar.
+        // Forcing height:100% on every expanded / non-hidden engagement panel
+        // stacked multiple transcript shells into a tall scroll (empty + loaded).
+        // Also avoid height:100% on nested transcript renderers — that stretched
+        // the search header away from segment rows with a huge flex gap.
         css += `
           #panels.ytd-watch-flexy,
           ytd-engagement-panel-section-list-renderer#panels {
@@ -206,33 +211,56 @@
             top: ${sidebarTopPx} !important;
             width: ${sidebarWidthPaddedPx} !important;
             height: ${sidebarHeightValue} !important;
-            overflow-y: auto !important;
+            overflow: hidden !important;
             z-index: 60 !important;
             background: var(--yt-spec-general-background-a, #0f0f0f) !important;
             padding: 0 ${constants.SIDEBAR_PADDING}px !important;
           }
-          #panels.ytd-watch-flexy > ytd-engagement-panel-section-list-renderer,
-          ytd-engagement-panel-section-list-renderer#panels > ytd-engagement-panel-section-list-renderer,
-          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[visibility="ENGAGEMENT_PANEL_VISIBILITY_EXPANDED"],
-          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer:not([style*="display: none"]) {
-            height: 100% !important;
-            max-height: 100% !important;
-          }
-          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer #header { flex-shrink: 0 !important; }
-          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer #content,
-          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer #body {
-            flex: 1 !important;
-            min-height: 0 !important;
-            overflow-y: auto !important;
-          }
-          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer ytd-conversation-section-renderer,
-          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer ytd-ask-promo-renderer {
-            height: 100% !important;
-            min-height: 0 !important;
-          }
-          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible] {
+          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible],
+          ytd-engagement-panel-section-list-renderer#panels ytd-engagement-panel-section-list-renderer[data-ytsp-visible] {
             display: flex !important;
             flex-direction: column !important;
+            height: 100% !important;
+            max-height: 100% !important;
+            min-height: 0 !important;
+            box-sizing: border-box !important;
+          }
+          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible] #header,
+          ytd-engagement-panel-section-list-renderer#panels ytd-engagement-panel-section-list-renderer[data-ytsp-visible] #header {
+            flex-shrink: 0 !important;
+          }
+          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible] #content,
+          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible] #body,
+          ytd-engagement-panel-section-list-renderer#panels ytd-engagement-panel-section-list-renderer[data-ytsp-visible] #content,
+          ytd-engagement-panel-section-list-renderer#panels ytd-engagement-panel-section-list-renderer[data-ytsp-visible] #body {
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            overflow-x: hidden !important;
+            overflow-y: auto !important;
+          }
+          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-conversation-section-renderer,
+          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-ask-promo-renderer,
+          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-transcript-renderer,
+          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-transcript-search-panel-renderer,
+          ytd-engagement-panel-section-list-renderer#panels ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-conversation-section-renderer,
+          ytd-engagement-panel-section-list-renderer#panels ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-ask-promo-renderer,
+          ytd-engagement-panel-section-list-renderer#panels ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-transcript-renderer,
+          ytd-engagement-panel-section-list-renderer#panels ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-transcript-search-panel-renderer {
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            height: auto !important;
+            max-height: none !important;
+          }
+          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-transcript-segment-list-renderer,
+          #panels.ytd-watch-flexy ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-transcript-body-renderer,
+          ytd-engagement-panel-section-list-renderer#panels ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-transcript-segment-list-renderer,
+          ytd-engagement-panel-section-list-renderer#panels ytd-engagement-panel-section-list-renderer[data-ytsp-visible] ytd-transcript-body-renderer {
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            overflow-y: auto !important;
+            height: auto !important;
           }
         `;
       }

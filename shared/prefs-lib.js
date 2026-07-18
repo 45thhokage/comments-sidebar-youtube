@@ -7,7 +7,7 @@
 
   var ALL_TABS = [
     "description", "comments", "ycs", "chapters",
-    "ask", "related", "playlist", "chat",
+    "transcript", "ask", "related", "playlist", "chat",
   ];
 
   var STORAGE_MODE_KEY = "ytspStorageMode";

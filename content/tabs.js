@@ -2,8 +2,8 @@
  * tabs.js — Tab switching and sidebar child visibility
  *
  * Manages which content is visible in the sidebar panel when the user
- * clicks a tab button.  Also intercepts native YouTube button clicks
- * (Ask, Chapters) to auto-switch to the corresponding tab.
+  * clicks a tab button.  Also intercepts native YouTube button clicks
+  * (Ask, Chapters, Transcript) to auto-switch to the corresponding tab.
  *
  * Each tab in tabConfig describes its zone and matching logic:
  *   zone "below"     — show #below (description / comments sections)
@@ -57,6 +57,11 @@
       zone: "panel",
       detector: YTSP.isChapterPanel,
       activator: YTSP.tryActivateChaptersPanel,
+    },
+    transcript: {
+      zone: "panel",
+      detector: YTSP.isTranscriptPanel,
+      activator: YTSP.tryActivateTranscriptPanel,
     },
     ask: {
       zone: "panel",
@@ -162,6 +167,10 @@
       if (!options.force) return;
     }
     if (tab === state.activeTab && !options.force) return;
+    if (state.activeTab === "transcript" && tab !== "transcript" &&
+        typeof YTSP.resetTranscriptActivation === "function") {
+      YTSP.resetTranscriptActivation();
+    }
     if (dom.tabBtns[state.activeTab]) dom.tabBtns[state.activeTab].classList.remove("active");
     state.activeTab = tab;
     if (dom.tabBtns[tab]) dom.tabBtns[tab].classList.add("active");
@@ -220,16 +229,44 @@
       });
     } else if (config.zone === "panel") {
       secondaryChildren.forEach(function (child) { child.style.display = "none"; });
-      var found = false;
-      panelChildren.forEach(function (child) {
-        if (config.detector(child)) {
-          showPanel(child);
-          found = true;
-        } else {
-          hidePanel(child);
-        }
+
+      // YouTube keeps multiple shells that match the same detector (empty + real).
+      // Showing all of them stacks N full-height panels — empty "loading" on top,
+      // real content only after scrolling. Pick one; hide the rest.
+      var matches = panelChildren.filter(function (child) {
+        return config.detector(child);
       });
-      if (!found && config.activator) config.activator();
+      var chosen = null;
+      if (tab === "transcript" && typeof YTSP.pickBestTranscriptPanel === "function") {
+        chosen = YTSP.pickBestTranscriptPanel(matches);
+      } else if (matches.length) {
+        chosen = matches[0];
+        for (var mi = 0; mi < matches.length; mi++) {
+          if ((matches[mi].textContent || "").trim().length > 40) {
+            chosen = matches[mi];
+            break;
+          }
+        }
+      }
+
+      panelChildren.forEach(function (child) {
+        if (chosen && child === chosen) showPanel(child);
+        else hidePanel(child);
+      });
+
+      // Transcript shells often exist empty; showPanel alone never fetches segments.
+      // Keep calling the activator until content arrives (it self-guards re-clicks).
+      if (config.activator) {
+        if (!chosen) {
+          config.activator();
+        } else if (
+          tab === "transcript" &&
+          typeof YTSP.transcriptPanelHasContent === "function" &&
+          !YTSP.transcriptPanelHasContent(chosen)
+        ) {
+          config.activator();
+        }
+      }
     } else if (config.zone === "below") {
       panelChildren.forEach(hidePanel);
       secondaryChildren.forEach(function (child) { child.style.display = ""; });
@@ -250,6 +287,13 @@
       }
       if (YTSP.isChaptersButtonClick(event.target)) {
         setTimeout(function () { YTSP.switchTab("chapters"); }, 150);
+        return;
+      }
+      if (YTSP.isTranscriptButtonClick(event.target)) {
+        if (YTSP._transcriptProgrammaticClick) return;
+        // YouTube is already opening/fetching — activator must not re-click.
+        YTSP._transcriptUserOpened = true;
+        setTimeout(function () { YTSP.switchTab("transcript"); }, 150);
       }
     }, true);
   };
@@ -265,6 +309,7 @@
             if (panel.getAttribute("visibility") === "ENGAGEMENT_PANEL_VISIBILITY_EXPANDED") {
               if (YTSP.isAskPanel(panel) && state.activeTab !== "ask") YTSP.switchTab("ask");
               else if (YTSP.isChapterPanel(panel) && state.activeTab !== "chapters") YTSP.switchTab("chapters");
+              else if (YTSP.isTranscriptPanel(panel) && state.activeTab !== "transcript") YTSP.switchTab("transcript");
             }
           }
         }

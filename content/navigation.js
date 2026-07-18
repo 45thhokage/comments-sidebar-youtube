@@ -72,6 +72,11 @@
     var videoChanged = videoId && videoId !== state.lastVideoId;
     if (videoId) state.lastVideoId = videoId;
 
+    // New video needs a fresh native "Show transcript" click if on that tab.
+    if (videoChanged && typeof YTSP.resetTranscriptActivation === "function") {
+      YTSP.resetTranscriptActivation();
+    }
+
     if (activateTimer !== null) {
       clearTimeout(activateTimer);
       activateTimer = null;

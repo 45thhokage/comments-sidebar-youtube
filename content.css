@@ -270,7 +270,7 @@ body[ytsp-active] #secondary-inner > [id^="plasmo-yck-root-"]::-webkit-scrollbar
   border-radius: 3px;
 }
 
-/* ── Scrollbar polish for panels container (ask/chapters) ──── */
+/* ── Scrollbar polish for panels container (ask/chapters/transcript) ──── */
 body[ytsp-active] #panels::-webkit-scrollbar {
   width: 5px;
 }
